@@ -21,6 +21,7 @@ object AppConstants {
         const val RESP = "RESP"
         const val ASYNC_NOTIFY = "ASYNC_NOTIFY"
         const val PROTOCOL_ERROR = "PROTOCOL_ERROR"
+        const val PING_REQ = "PING_REQ"
 
         // Reservados para el futuro
         const val QUERY_REQ = "QUERY_REQ"

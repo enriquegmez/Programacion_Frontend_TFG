@@ -1,6 +1,7 @@
 package com.enrique.tiago_app.logic
 
 import android.util.Log
+import com.enrique.tiago_app.communication.SessionManager
 import com.enrique.tiago_app.protocol.MessageCodec
 import com.enrique.tiago_app.communication.WebSocketClient
 import com.enrique.tiago_app.utils.AppConstants

@@ -16,7 +16,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.enrique.tiago_app.protocol.MessageCodec
 import com.enrique.tiago_app.communication.WebSocketClient
 import com.enrique.tiago_app.logic.RobotRepository
-import com.enrique.tiago_app.logic.SessionManager
+import com.enrique.tiago_app.communication.SessionManager
 import com.enrique.tiago_app.ui.logic.MainViewModel
 import com.enrique.tiago_app.ui.logic.MainViewModelFactory
 
