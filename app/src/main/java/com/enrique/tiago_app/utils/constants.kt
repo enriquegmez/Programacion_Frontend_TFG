@@ -3,52 +3,94 @@ package com.enrique.tiago_app.utils
 /**
  * AppConstants
  * Centraliza todos los valores fijos del protocolo y la red.
- * Debe ser un reflejo exacto de constants.py en el Backend.
+ * Reflejo exacto del JSON Schema y constants.py del Backend.
  */
 object AppConstants {
 
-    // 1. Configuración de Red
-    // "10.0.2.2" es la IP especial para que el emulador Android vea el localhost de tu PC.
-    // Cámbiala por la IP de tu PC en la red local si usas un móvil físico.
     const val DEFAULT_SERVER_IP = "192.168.68.87"
     const val DEFAULT_SERVER_PORT = 8765
 
-    // 2. Tipos de Mensaje (MsgType)
+    // ==========================================
+    // ESTADOS (UI y Lógica)
+    // ==========================================
+    object GlobalState {
+        const val DESCONECTADO = "DESCONECTADO" // Ajustado al nombre que usamos en la UI
+        const val ESPERANDO_CONEXION_BACKEND = "ESPERANDO_CONEXION_BACKEND"
+        const val CONEXION_BACKEND = "CONEXION_BACKEND"
+        const val ESPERANDO_INICIO_SESION = "ESPERANDO_INICIO_SESION"
+        const val SESION_INICIADA = "SESION_INICIADA"
+        const val ESPERANDO_CIERRE_SESION = "ESPERANDO_CIERRE_SESION"
+        const val ESPERANDO_DESCONEXION_BACKEND = "ESPERANDO_DESCONEXION_BACKEND"
+    }
+
+    object MovementState {
+        const val IDLE = "IDLE"
+        const val ESPERANDO_PERMISO_ENVIO_INFO = "ESPERANDO_PERMISO_ENVIO_INFO"
+        const val ENVIANDO_INFO = "ENVIANDO_INFO"
+        const val ESPERANDO_TERMINAR_ENVIO_INFO = "ESPERANDO_TERMINAR_ENVIO_INFO"
+    }
+
+    // ==========================================
+    // PROTOCOLO: Tipos de Mensaje (Header -> type)
+    // ==========================================
     object MsgType {
         const val COMMAND_REQ = "COMMAND_REQ"
+        const val QUERY_REQ = "QUERY_REQ"
+        const val ACTION_REQ = "ACTION_REQ"
+        const val STOP_ACTION_REQ = "STOP_ACTION_REQ"
         const val CONTROL_MODE_REQ = "CONTROL_MODE_REQ"
         const val CONTROL_REQ = "CONTROL_REQ"
+        const val STREAM_REQ = "STREAM_REQ"
+        const val STOP_STREAM_REQ = "STOP_STREAM_REQ"
         const val RESP = "RESP"
         const val ASYNC_NOTIFY = "ASYNC_NOTIFY"
         const val PROTOCOL_ERROR = "PROTOCOL_ERROR"
         const val PING_REQ = "PING_REQ"
-
-        // Reservados para el futuro
-        const val QUERY_REQ = "QUERY_REQ"
-        const val STREAM_DATA = "STREAM_DATA"
+        const val ACK = "ACK"
     }
 
-    // 3. Tipos de Respuesta (resp_type dentro del payload de un RESP)
+    // ==========================================
+    // PROTOCOLO: Tipos de Respuesta (Payload -> resp_type)
+    // ==========================================
     object RespType {
         const val COMMAND_RESP = "COMMAND_RESP"
+        const val QUERY_RESP = "QUERY_RESP"
+        const val ACTION_FEEDBACK = "ACTION_FEEDBACK"
+        const val STOP_ACTION_FEEDBACK = "STOP_ACTION_FEEDBACK"
         const val CONTROL_MODE_RESP = "CONTROL_MODE_RESP"
-        const val ASYNC_NOTIFY = "ASYNC_NOTIFY"
+        const val CONTROL_RESP = "CONTROL_RESP"
+        const val STREAM_RESP = "STREAM_RESP"
+        const val STOP_STREAM_RESP = "STOP_STREAM_RESP"
     }
 
-    // 4. Acciones del Gestor de Conexión (Action)
+    // ==========================================
+    // PROTOCOLO: Payloads Específicos
+    // ==========================================
     object Action {
-        const val CONNECT = "CONNECT"
-        const val DISCONNECT = "DISCONNECT"
-        const val END = "END"
+        // Valores en MINÚSCULAS para cumplir el JSON Schema
+        const val CONNECT = "connect"
+        const val DISCONNECT = "disconnect"
+        const val CHANGE_VARS = "change_vars"
+        const val END = "end"
+        const val GET_HISTORY = "get_history"
+        const val SSH = "ssh"
     }
 
-    // 5. Eventos para el Modo de Control (ControlEvent)
     object ControlEvent {
         const val START = "START"
         const val STOP = "STOP"
     }
 
-    // 6. Códigos de Estado (StatusCode HTTP/WebSocket)
+    object AsyncNotify {
+        const val TYPE_SESSION_ID = "session_id"
+        const val TYPE_EMERGENCY_STOP = "EMERGENCY_STOP"
+
+        const val DETAILS_ROBOT_LOST = "ROBOT_CONNECTION_LOST"
+    }
+
+    // ==========================================
+    // RED Y HARDWARE
+    // ==========================================
     object StatusCode {
         const val OK = 200
         const val BAD_REQUEST = 400
@@ -58,21 +100,10 @@ object AppConstants {
         const val INTERNAL_ERROR = 500
     }
 
-    // 7. Notificaciones Asíncronas (Watchdog y Sesión)
-    object AsyncDetails {
-        const val ROBOT_CONNECTION_LOST = "ROBOT_CONNECTION_LOST"
-        const val SESSION_ASSIGNED_PREFIX = "SESSION_ASSIGNED"
-    }
-
-    // 8. Constantes de Robótica y Hardware
     object Robot {
         const val DEFAULT_CMD_VEL_TOPIC = "cmd_vel"
-
-        // Límites máximos permitidos (Reflejo del safety_filter.py)
-        const val MAX_LINEAR_V = 0.5f  // m/s
-        const val MAX_ANGULAR_W = 1.0f // rad/s
-
-        // Intervalo de publicación del Joystick hacia el WebSocket
-        const val JOYSTICK_PUBLISH_INTERVAL_MS = 100L // 10Hz (10 mensajes por segundo)
+        const val MAX_LINEAR_V = 0.5f
+        const val MAX_ANGULAR_W = 1.0f
+        const val JOYSTICK_PUBLISH_INTERVAL_MS = 100L
     }
 }

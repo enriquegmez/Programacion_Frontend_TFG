@@ -4,68 +4,105 @@ import android.util.Log
 import com.enrique.tiago_app.utils.AppConstants
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.encodeToJsonElement
-import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.*
 
 /**
- * MessageCodec (El Traductor)
+ * MessageCodec (El Traductor - Frontera JSON)
  */
 class MessageCodec {
-    // 1. Cambiamos 'private' por '@PublishedApi internal'
-    @PublishedApi
-    internal val TAG = "MessageCodec"
+    private val tag = "MessageCodec"
 
-    // 2. Hacemos lo mismo con el motor JSON
     @OptIn(ExperimentalSerializationApi::class)
-    @PublishedApi
-    internal val jsonFormat = Json {
+    private val jsonFormat = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
         explicitNulls = false
     }
 
-    // 3. Y con el contador de IDs
-    @PublishedApi
-    internal var msgIdCounter: Long = 1L
+    private var msgIdCounter: Long = 1L
 
-    @PublishedApi
-    internal fun getNextMsgId(): Long {
+    private fun getNextMsgId(): Long {
         return msgIdCounter++
     }
 
-    // ==========================================
-    // 1. PARSER (De JSON recibido a Kotlin)
-    // ==========================================
-
-    /**
-     * Convierte el string del WebSocket en un objeto RobotMessage estructurado.
-     * Si hay un error JSON, devuelve un RobotMessage de tipo PROTOCOL_ERROR.
-     */
     fun decode(rawString: String): RobotMessage {
         return try {
-            jsonFormat.decodeFromString<RobotMessage>(rawString)
+            val jsonObj = jsonFormat.parseToJsonElement(rawString).jsonObject
+            val header = jsonFormat.decodeFromJsonElement<MessageHeader>(jsonObj["header"]!!)
+            val payloadJson = jsonObj["payload"]!!
+
+            val payloadObj: Payload = when (header.type) {
+                AppConstants.MsgType.COMMAND_REQ -> jsonFormat.decodeFromJsonElement<CommandReqPayload>(payloadJson)
+                AppConstants.MsgType.QUERY_REQ -> jsonFormat.decodeFromJsonElement<QueryReqPayload>(payloadJson)
+                AppConstants.MsgType.ACTION_REQ, AppConstants.MsgType.STOP_ACTION_REQ -> jsonFormat.decodeFromJsonElement<ActionReqPayload>(payloadJson)
+                AppConstants.MsgType.CONTROL_MODE_REQ -> jsonFormat.decodeFromJsonElement<ControlModeReqPayload>(payloadJson)
+                AppConstants.MsgType.CONTROL_REQ -> jsonFormat.decodeFromJsonElement<ControlReqPayload>(payloadJson)
+                AppConstants.MsgType.STREAM_REQ -> jsonFormat.decodeFromJsonElement<StreamReqPayload>(payloadJson)
+                AppConstants.MsgType.STOP_STREAM_REQ -> jsonFormat.decodeFromJsonElement<StopStreamReqPayload>(payloadJson)
+                AppConstants.MsgType.ASYNC_NOTIFY -> jsonFormat.decodeFromJsonElement<AsyncNotifyPayload>(payloadJson)
+                AppConstants.MsgType.PROTOCOL_ERROR -> jsonFormat.decodeFromJsonElement<ProtocolErrorPayload>(payloadJson)
+                AppConstants.MsgType.PING_REQ, AppConstants.MsgType.ACK -> EmptyPayload()
+                AppConstants.MsgType.RESP -> {
+                    val respType = payloadJson.jsonObject["resp_type"]?.jsonPrimitive?.content
+                    when (respType) {
+                        AppConstants.RespType.QUERY_RESP -> jsonFormat.decodeFromJsonElement<QueryRespPayload>(payloadJson)
+                        AppConstants.RespType.ACTION_FEEDBACK, AppConstants.RespType.STOP_ACTION_FEEDBACK -> jsonFormat.decodeFromJsonElement<ActionFeedbackPayload>(payloadJson)
+                        AppConstants.RespType.STREAM_RESP -> jsonFormat.decodeFromJsonElement<StreamRespPayload>(payloadJson)
+                        else -> jsonFormat.decodeFromJsonElement<GenericRespPayload>(payloadJson)
+                    }
+                }
+                else -> EmptyPayload()
+            }
+
+            RobotMessage(header = header, payload = payloadObj)
+
         } catch (e: Exception) {
-            Log.e(TAG, "Error crítico de formato JSON: ${e.message}")
+            Log.e(tag, "Error de formato JSON: ${e.message}")
             buildInternalErrorMsg(
                 AppConstants.StatusCode.BAD_REQUEST,
-                "Invalid JSON format or missing fields"
+                "Invalid JSON format or missing fields: ${e.message}"
             )
         }
     }
 
-    /**
-     * Extrae el JsonElement y lo convierte a la Data Class específica (Ej: CommandRespPayload).
-     * El Director usará esta función después de ver el header.type.
-     */
-    inline fun <reified T> decodePayload(payload: JsonElement): T? {
-        return try {
-            jsonFormat.decodeFromJsonElement<T>(payload)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error al decodificar el payload específico: ${e.message}")
-            null
+    fun encode(msg: RobotMessage): String {
+        val finalMsgId = if (msg.header.msgId <= 0L) getNextMsgId() else msg.header.msgId
+        val finalHeader = msg.header.copy(
+            msgId = finalMsgId,
+            timestamp = System.currentTimeMillis() / 1000.0
+        )
+
+        val headerJson = jsonFormat.encodeToJsonElement(finalHeader)
+
+        val payloadJson = when (val p = msg.payload) {
+            is CommandReqPayload -> jsonFormat.encodeToJsonElement(p)
+            is QueryReqPayload -> jsonFormat.encodeToJsonElement(p)
+            is ActionReqPayload -> jsonFormat.encodeToJsonElement(p)
+            is ControlModeReqPayload -> jsonFormat.encodeToJsonElement(p)
+            is ControlReqPayload -> jsonFormat.encodeToJsonElement(p)
+            is StreamReqPayload -> jsonFormat.encodeToJsonElement(p)
+            is StopStreamReqPayload -> jsonFormat.encodeToJsonElement(p)
+            is AsyncNotifyPayload -> jsonFormat.encodeToJsonElement(p)
+            is ProtocolErrorPayload -> jsonFormat.encodeToJsonElement(p)
+            is QueryRespPayload -> jsonFormat.encodeToJsonElement(p)
+            is ActionFeedbackPayload -> jsonFormat.encodeToJsonElement(p)
+            is StreamRespPayload -> jsonFormat.encodeToJsonElement(p)
+            is GenericRespPayload -> jsonFormat.encodeToJsonElement(p)
+            is EmptyPayload -> buildJsonObject {}
+            else -> {
+                Log.w(tag, "Tipo de payload no reconocido al codificar: ${p::class.simpleName}")
+                buildJsonObject {}
+            }
         }
+
+        val finalJsonObj = buildJsonObject {
+            put("header", headerJson)
+            put("payload", payloadJson)
+        }
+
+        val finalJsonString = jsonFormat.encodeToString(finalJsonObj)
+        Log.d(tag, "Codificado (OUT): $finalJsonString")
+        return finalJsonString
     }
 
     private fun buildInternalErrorMsg(code: Int, description: String): RobotMessage {
@@ -75,39 +112,7 @@ class MessageCodec {
             sessionId = "",
             timestamp = System.currentTimeMillis() / 1000.0
         )
-        // Usamos la función inline reified para convertir la clase de error a JsonElement
         val errorPayload = ProtocolErrorPayload(errorCode = code, description = description)
-        val payloadElement = jsonFormat.encodeToJsonElement(errorPayload)
-
-        return RobotMessage(header = header, payload = payloadElement)
-    }
-
-    // ==========================================
-    // 2. ENCODER (De Kotlin a String JSON)
-    // ==========================================
-
-    /**
-     * Toma una cabecera y un payload específico, inyecta los datos temporales,
-     * limpia los nulos y lo convierte en un string JSON válido.
-     */
-    inline fun <reified T> encode(header: MessageHeader, payloadObj: T): String {
-        // 1. Clonamos la cabecera para autocompletar el ID y el timestamp (igual que en Python)
-        val finalMsgId = if (header.msgId <= 0L) getNextMsgId() else header.msgId
-        val finalHeader = header.copy(
-            msgId = finalMsgId,
-            timestamp = System.currentTimeMillis() / 1000.0
-        )
-
-        // 2. Convertimos el payload específico a JsonElement genérico
-        val payloadElement = jsonFormat.encodeToJsonElement(payloadObj)
-
-        // 3. Empaquetamos todo en el RobotMessage final
-        val robotMessage = RobotMessage(header = finalHeader, payload = payloadElement)
-
-        // 4. Lo convertimos a String (explicitNulls=false quitará los nulos por nosotros)
-        val finalJson = jsonFormat.encodeToString(robotMessage)
-
-        Log.d(TAG, "Codificado (OUT): $finalJson")
-        return finalJson
+        return RobotMessage(header = header, payload = errorPayload)
     }
 }
