@@ -4,31 +4,30 @@ import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import com.enrique.tiago_app.utils.AppConstants
 
-// Importamos modelos y constantes puros (NADA de JSON)
 import com.enrique.tiago_app.protocol.RobotMessage
 import com.enrique.tiago_app.protocol.CommandReqPayload
 import com.enrique.tiago_app.protocol.ControlModeReqPayload
-import com.enrique.tiago_app.protocol.GenericRespPayload
 import com.enrique.tiago_app.protocol.AsyncNotifyPayload
-import com.enrique.tiago_app.protocol.MessageCodec
-import com.enrique.tiago_app.utils.AppConstants.GlobalState
-import com.enrique.tiago_app.utils.AppConstants.MovementState
-import com.enrique.tiago_app.utils.AppConstants.MsgType
-import com.enrique.tiago_app.utils.AppConstants.Action
+import com.enrique.tiago_app.protocol.GenericRespPayload
+import com.enrique.tiago_app.protocol.QueryRespPayload
+import com.enrique.tiago_app.protocol.ActionFeedbackPayload
+import com.enrique.tiago_app.protocol.StreamRespPayload
 
 /**
  * ProtocolStateManager
  * El Semáforo del Frontend.
- * Recibe el MessageCodec por inyección para delegar la traducción sin tocar JSON.
+ * Trabaja ÚNICAMENTE con objetos Kotlin puros, desconociendo por completo la existencia de JSON.
  */
-class ProtocolStateManager(private val codec: MessageCodec) {
+class ProtocolStateManager {
     private val tag = "ProtocolStateManager"
 
-    private val _globalState = MutableStateFlow(GlobalState.IDLE)
+    // Estados observables por la Interfaz de Usuario (UI)
+    private val _globalState = MutableStateFlow(AppConstants.GlobalState.IDLE)
     val globalState: StateFlow<String> = _globalState.asStateFlow()
 
-    private val _movementState = MutableStateFlow(MovementState.IDLE)
+    private val _movementState = MutableStateFlow(AppConstants.MovementState.IDLE)
     val movementState: StateFlow<String> = _movementState.asStateFlow()
 
     // ==========================================
@@ -37,182 +36,194 @@ class ProtocolStateManager(private val codec: MessageCodec) {
     fun canSendMessage(msg: RobotMessage): Pair<Boolean, String> {
         val type = msg.header.type
 
-        // 0. Mensajes transversales
-        if (type == MsgType.PING_REQ || type == "ACK") return Pair(true, "")
+        // 0. Mensajes de red transversales
+        if (type == AppConstants.MsgType.PING_REQ || type == AppConstants.MsgType.ACK) return Pair(true, "")
 
-        // 1. Bloqueo transitorio
+        // 1. Bloqueo si hay una petición en vuelo
         if (_globalState.value.startsWith("ESPERANDO_") ||
             _movementState.value.startsWith("ESPERANDO_")) {
             return Pair(false, "Bloqueado: Esperando respuesta del servidor.")
         }
 
-        // 2. Reglas
+        // 2. Semáforo según Estado Global y Subestado
         when (_globalState.value) {
-            GlobalState.IDLE -> return Pair(false, "Conexión no establecida.")
+            AppConstants.GlobalState.IDLE -> {
+                // Solo se permite PING_REQ, que ya se aprobó arriba
+                return Pair(false, "Conexión no establecida.")
+            }
 
-            GlobalState.CONEXION_BACKEND -> {
-                if (type == MsgType.COMMAND_REQ) {
-                    // Usamos TU traductor centralizado
-                    val payloadObj = codec.decodePayload<CommandReqPayload>(msg.payload)
-                    val action = payloadObj?.action
-
-                    if (action == Action.CONNECT || action == Action.END) return Pair(true, "")
+            AppConstants.GlobalState.CONEXION_BACKEND -> {
+                if (msg.payload is CommandReqPayload) {
+                    val action = msg.payload.action
+                    if (action == AppConstants.Action.CONNECT || action == AppConstants.Action.END) return Pair(true, "")
                     return Pair(false, "Acción '$action' denegada. Se espera 'connect' o 'end'.")
                 }
             }
 
-            GlobalState.SESION_INICIADA -> {
-                if (type == MsgType.COMMAND_REQ) {
-                    val payloadObj = codec.decodePayload<CommandReqPayload>(msg.payload)
-                    if (payloadObj?.action == Action.DISCONNECT) return Pair(true, "")
-                    return Pair(false, "Acción '${payloadObj?.action}' denegada en SESION_INICIADA.")
+            AppConstants.GlobalState.SESION_INICIADA -> {
+                if (msg.payload is CommandReqPayload) {
+                    if (msg.payload.action == AppConstants.Action.DISCONNECT) return Pair(true, "")
+                    return Pair(false, "Acción '${msg.payload.action}' denegada en SESION_INICIADA.")
                 }
 
-                if (type == "CONTROL_MODE_REQ" || type == "CONTROL_REQ") {
+                // Submáquina de Movimiento
+                if (type == AppConstants.MsgType.CONTROL_MODE_REQ || type == AppConstants.MsgType.CONTROL_REQ) {
                     when (_movementState.value) {
-                        MovementState.IDLE -> {
-                            if (type == "CONTROL_MODE_REQ") {
-                                val payloadObj = codec.decodePayload<ControlModeReqPayload>(msg.payload)
-                                if (payloadObj?.event == "START") return Pair(true, "")
+                        AppConstants.MovementState.IDLE -> {
+                            if (msg.payload is ControlModeReqPayload) {
+                                if (msg.payload.event == AppConstants.ControlEvent.START) return Pair(true, "")
                             }
-                            return Pair(false, "Comando denegado. El estado es IDLE.")
+                            return Pair(false, "Comando denegado. El estado actual es IDLE.")
                         }
-                        MovementState.ENVIANDO_INFO -> {
-                            if (type == "CONTROL_REQ") return Pair(true, "")
-                            if (type == "CONTROL_MODE_REQ") {
-                                val payloadObj = codec.decodePayload<ControlModeReqPayload>(msg.payload)
-                                if (payloadObj?.event == "STOP") return Pair(true, "")
+                        AppConstants.MovementState.ENVIANDO_INFO -> {
+                            if (type == AppConstants.MsgType.CONTROL_REQ) return Pair(true, "") // Joystick activo
+                            if (msg.payload is ControlModeReqPayload) {
+                                if (msg.payload.event == AppConstants.ControlEvent.STOP) return Pair(true, "")
                             }
-                            return Pair(false, "Comando denegado. El estado es ENVIANDO_INFO.")
+                            return Pair(false, "Comando denegado. El estado actual es ENVIANDO_INFO.")
                         }
                         else -> return Pair(false, "Estado de movimiento no válido para envío.")
                     }
                 }
             }
-            else -> {}
         }
-        return Pair(false, "Mensaje '$type' no soportado en estado ${_globalState.value}.")
+        return Pair(false, "Mensaje '$type' no soportado en el estado ${_globalState.value}.")
     }
 
     // ==========================================
-    // 2. COMMIT AL ENVIAR
+    // 2. COMMIT AL ENVIAR (Pone la App en 'Cargando...')
     // ==========================================
     fun commitRequestSent(reqMsg: RobotMessage) {
         val type = reqMsg.header.type
 
-        if (type == MsgType.PING_REQ && _globalState.value == GlobalState.IDLE) {
-            transitionGlobal(GlobalState.ESPERANDO_CONEXION_BACKEND)
+        if (type == AppConstants.MsgType.PING_REQ && _globalState.value == AppConstants.GlobalState.IDLE) {
+            transitionGlobal(AppConstants.GlobalState.ESPERANDO_CONEXION_BACKEND)
             return
         }
 
-        if (type == MsgType.COMMAND_REQ) {
-            val payloadObj = codec.decodePayload<CommandReqPayload>(reqMsg.payload)
-            when (payloadObj?.action) {
-                Action.CONNECT -> transitionGlobal(GlobalState.ESPERANDO_INICIO_SESION)
-                Action.DISCONNECT -> transitionGlobal(GlobalState.ESPERANDO_CIERRE_SESION)
-                Action.END -> transitionGlobal(GlobalState.ESPERANDO_DESCONEXION_BACKEND)
+        if (reqMsg.payload is CommandReqPayload) {
+            when (reqMsg.payload.action) {
+                AppConstants.Action.CONNECT -> transitionGlobal(AppConstants.GlobalState.ESPERANDO_INICIO_SESION)
+                AppConstants.Action.DISCONNECT -> transitionGlobal(AppConstants.GlobalState.ESPERANDO_CIERRE_SESION)
+                AppConstants.Action.END -> transitionGlobal(AppConstants.GlobalState.ESPERANDO_DESCONEXION_BACKEND)
             }
-        } else if (type == "CONTROL_MODE_REQ") {
-            val payloadObj = codec.decodePayload<ControlModeReqPayload>(reqMsg.payload)
-            when (payloadObj?.event) {
-                "START" -> transitionMovement(MovementState.ESPERANDO_PERMISO_ENVIO_INFO)
-                "STOP" -> transitionMovement(MovementState.ESPERANDO_TERMINAR_ENVIO_INFO)
+        } else if (reqMsg.payload is ControlModeReqPayload) {
+            when (reqMsg.payload.event) {
+                AppConstants.ControlEvent.START -> transitionMovement(AppConstants.MovementState.ESPERANDO_PERMISO_ENVIO_INFO)
+                AppConstants.ControlEvent.STOP -> transitionMovement(AppConstants.MovementState.ESPERANDO_TERMINAR_ENVIO_INFO)
             }
         }
     }
 
     // ==========================================
-    // 3. COMMIT AL RECIBIR
+    // 3. COMMIT AL RECIBIR (Resuelve el 'Cargando...')
     // ==========================================
     fun commitResponseReceived(reqMsg: RobotMessage, respMsg: RobotMessage) {
-        if (reqMsg.header.type == MsgType.PING_REQ && respMsg.header.type == "ACK") {
-            if (_globalState.value == GlobalState.ESPERANDO_CONEXION_BACKEND) {
-                transitionGlobal(GlobalState.CONEXION_BACKEND)
+
+        // 1. Manejo del Primer Ping -> ACK
+        if (reqMsg.header.type == AppConstants.MsgType.PING_REQ && respMsg.header.type == AppConstants.MsgType.ACK) {
+            if (_globalState.value == AppConstants.GlobalState.ESPERANDO_CONEXION_BACKEND) {
+                transitionGlobal(AppConstants.GlobalState.CONEXION_BACKEND)
             }
             return
         }
 
-        if (respMsg.header.type == "ASYNC_NOTIFY") {
-            val notifyObj = codec.decodePayload<AsyncNotifyPayload>(respMsg.payload)
-            if (notifyObj?.type == "EMERGENCY_STOP" && notifyObj.details == "ROBOT_CONNECTION_LOST") {
+        // 2. Avisos Asíncronos (Watchdog)
+        if (respMsg.payload is AsyncNotifyPayload) {
+            if (respMsg.payload.type == AppConstants.AsyncNotify.TYPE_EMERGENCY_STOP &&
+                respMsg.payload.details == AppConstants.AsyncNotify.DETAILS_ROBOT_LOST) {
                 triggerSessionReset()
             }
             return
         }
 
-        // Extraemos success de la respuesta genérica
-        val respObj = codec.decodePayload<GenericRespPayload>(respMsg.payload)
-        val success = respObj?.success ?: false
-        val reqType = reqMsg.header.type
+        // Extraemos si ha habido éxito (La mayoría usan GenericRespPayload u otros que heredan success)
+        val success = when (val p = respMsg.payload) {
+            is GenericRespPayload -> p.success
+            is QueryRespPayload -> p.success
+            is ActionFeedbackPayload -> p.success
+            is StreamRespPayload -> p.success
+            else -> false
+        }
 
-        if (reqType == MsgType.COMMAND_REQ) {
-            val reqPayload = codec.decodePayload<CommandReqPayload>(reqMsg.payload)
-            val action = reqPayload?.action
+        // 3. Lógica según lo que habíamos pedido (reqMsg)
+        if (reqMsg.payload is CommandReqPayload) {
+            val action = reqMsg.payload.action
             if (success) {
                 when (action) {
-                    Action.CONNECT -> {
-                        transitionGlobal(GlobalState.SESION_INICIADA)
-                        transitionMovement(MovementState.IDLE)
+                    AppConstants.Action.CONNECT -> {
+                        transitionGlobal(AppConstants.GlobalState.SESION_INICIADA)
+                        transitionMovement(AppConstants.MovementState.IDLE)
                     }
-                    Action.DISCONNECT -> {
-                        transitionGlobal(GlobalState.CONEXION_BACKEND)
-                        transitionMovement(MovementState.IDLE)
+                    AppConstants.Action.DISCONNECT -> {
+                        transitionGlobal(AppConstants.GlobalState.CONEXION_BACKEND)
+                        transitionMovement(AppConstants.MovementState.IDLE)
                     }
-                    Action.END -> triggerFullReset()
+                    AppConstants.Action.END -> triggerFullReset() // Volvemos a Pantalla 1
                 }
-            } else {
+            } else { // Si hubo error, volvemos al estado desde el que iniciamos la petición
                 when (action) {
-                    Action.CONNECT -> transitionGlobal(GlobalState.CONEXION_BACKEND)
-                    Action.DISCONNECT -> transitionGlobal(GlobalState.SESION_INICIADA)
-                    Action.END -> transitionGlobal(GlobalState.CONEXION_BACKEND)
+                    AppConstants.Action.CONNECT -> transitionGlobal(AppConstants.GlobalState.CONEXION_BACKEND)
+                    AppConstants.Action.DISCONNECT -> transitionGlobal(AppConstants.GlobalState.SESION_INICIADA)
+                    AppConstants.Action.END -> transitionGlobal(AppConstants.GlobalState.CONEXION_BACKEND)
                 }
             }
         }
-        else if (reqType == "CONTROL_MODE_REQ") {
-            val reqPayload = codec.decodePayload<ControlModeReqPayload>(reqMsg.payload)
-            val event = reqPayload?.event
+        else if (reqMsg.payload is ControlModeReqPayload) {
+            val event = reqMsg.payload.event
             if (success) {
                 when (event) {
-                    "START" -> transitionMovement(MovementState.ENVIANDO_INFO)
-                    "STOP" -> transitionMovement(MovementState.IDLE)
+                    AppConstants.ControlEvent.START -> transitionMovement(AppConstants.MovementState.ENVIANDO_INFO)
+                    AppConstants.ControlEvent.STOP -> transitionMovement(AppConstants.MovementState.IDLE)
                 }
-            } else {
+            } else { // Si hubo error, volvemos al subestado anterior
                 when (event) {
-                    "START" -> transitionMovement(MovementState.IDLE)
-                    "STOP" -> transitionMovement(MovementState.ENVIANDO_INFO)
+                    AppConstants.ControlEvent.START -> transitionMovement(AppConstants.MovementState.IDLE)
+                    AppConstants.ControlEvent.STOP -> transitionMovement(AppConstants.MovementState.ENVIANDO_INFO)
                 }
             }
         }
-        else if (reqType == "CONTROL_REQ") {
+        else if (reqMsg.header.type == AppConstants.MsgType.CONTROL_REQ) {
+            // Regla estricta: si falla un ControlReq en pleno movimiento, abortamos a IDLE
             if (!success) {
-                Log.w(tag, "ControlErrorResp recibido. Forzando vuelta a IDLE de emergencia.")
-                transitionMovement(MovementState.IDLE)
+                Log.w(tag, "Error enviando velocidad al backend. Forzando subestado a IDLE.")
+                transitionMovement(AppConstants.MovementState.IDLE)
             }
         }
     }
 
     // ==========================================
-    // EVENTOS DE RESET Y TRANSICIONES
+    // EVENTOS DE RESET DE EMERGENCIA
     // ==========================================
+
+    // Llamado si falla el Watchdog de ROS2
     fun triggerSessionReset() {
-        Log.i(tag, "Reset de sesión. Volviendo a CONEXION_BACKEND.")
-        transitionGlobal(GlobalState.CONEXION_BACKEND)
-        transitionMovement(MovementState.IDLE)
+        Log.i(tag, "Línea caída o error de sesión. Volviendo a CONEXION_BACKEND.")
+        transitionGlobal(AppConstants.GlobalState.CONEXION_BACKEND)
+        transitionMovement(AppConstants.MovementState.IDLE)
     }
 
+    // Llamado si se corta el WebSocket o hacemos 'END'
     fun triggerFullReset() {
-        Log.i(tag, "Reset total del protocolo. Volviendo a DESCONECTADO.")
-        transitionGlobal(GlobalState.IDLE)
-        transitionMovement(MovementState.IDLE)
+        Log.i(tag, "Cierre completo. Volviendo a DESCONECTADO (Pantalla Inicial).")
+        transitionGlobal(AppConstants.GlobalState.IDLE)
+        transitionMovement(AppConstants.MovementState.IDLE)
     }
 
+    // ==========================================
+    // PRIVADAS
+    // ==========================================
     private fun transitionGlobal(newState: String) {
-        Log.d(tag, "Transición Global: ${_globalState.value} -> $newState")
-        _globalState.value = newState
+        if (_globalState.value != newState) {
+            Log.d(tag, "UI Global State: ${_globalState.value} -> $newState")
+            _globalState.value = newState
+        }
     }
 
     private fun transitionMovement(newState: String) {
-        Log.d(tag, "Transición Movimiento: ${_movementState.value} -> $newState")
-        _movementState.value = newState
+        if (_movementState.value != newState) {
+            Log.d(tag, "UI Movement State: ${_movementState.value} -> $newState")
+            _movementState.value = newState
+        }
     }
 }

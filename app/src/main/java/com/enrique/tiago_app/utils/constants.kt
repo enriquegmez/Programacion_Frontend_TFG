@@ -14,7 +14,7 @@ object AppConstants {
     // ESTADOS (UI y Lógica)
     // ==========================================
     object GlobalState {
-        const val DESCONECTADO = "DESCONECTADO" // Ajustado al nombre que usamos en la UI
+        const val IDLE = "IDLE" // Ajustado al nombre que usamos en la UI
         const val ESPERANDO_CONEXION_BACKEND = "ESPERANDO_CONEXION_BACKEND"
         const val CONEXION_BACKEND = "CONEXION_BACKEND"
         const val ESPERANDO_INICIO_SESION = "ESPERANDO_INICIO_SESION"

@@ -3,97 +3,137 @@ package com.enrique.tiago_app
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
 
-// Importamos todas nuestras piezas
+// --- IMPORTS DE TU ARQUITECTURA (PROTOCOL) ---
 import com.enrique.tiago_app.protocol.MessageCodec
-import com.enrique.tiago_app.communication.WebSocketClient
-import com.enrique.tiago_app.logic.RobotRepository
+import com.enrique.tiago_app.logic.ProtocolDirector
+import com.enrique.tiago_app.logic.ProtocolStateManager
 import com.enrique.tiago_app.communication.SessionManager
-import com.enrique.tiago_app.ui.logic.MainViewModel
-import com.enrique.tiago_app.ui.logic.MainViewModelFactory
+import com.enrique.tiago_app.communication.WebSocketClient
+import com.enrique.tiago_app.utils.AppConstants
 
+// --- IMPORTS DE TUS VIEWMODELS ---
+import com.enrique.tiago_app.ui.logic.MainViewModel
+import com.enrique.tiago_app.ui.logic.ControlViewModel
+
+// --- IMPORTS DE TUS PANTALLAS (SCREENS) ---
+import com.enrique.tiago_app.ui.screens.LoginScreen
+import com.enrique.tiago_app.ui.screens.MenuScreen
+import com.enrique.tiago_app.ui.screens.ControlScreen
+
+/**
+ * 1. CAJA FUERTE DE DEPENDENCIAS
+ * Mantiene la conexión viva y compartida entre todos los ViewModels.
+ */
+object AppDependencies {
+    private val appScope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.SupervisorJob()
+    )
+
+    val webSocketClient = WebSocketClient()
+    val codec = MessageCodec()
+    val stateManager = ProtocolStateManager()
+    val sessionManager = SessionManager()
+
+    val director = ProtocolDirector(
+        scope = appScope,
+        webSocketClient = webSocketClient,
+        codec = codec,
+        stateManager = stateManager,
+        sessionManager = sessionManager
+    )
+}
+
+/**
+ * 2. ACTIVIDAD PRINCIPAL
+ */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        // 1. ARRANCAMOS EL MOTOR (Inyección de dependencias manual)
-        val webSocketClient = WebSocketClient()
-        val messageManager = MessageCodec()
-        val sessionManager = SessionManager()
-        val robotRepository = RobotRepository(webSocketClient, messageManager, sessionManager)
-
-        // 2. CREAMOS EL FACTORY DEL VIEWMODEL
-        val factory = MainViewModelFactory(robotRepository)
-
         setContent {
             MaterialTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    // 3. PINTAMOS LA PANTALLA
-                    MainScreen(factory)
+                    AppNavigation()
                 }
             }
         }
     }
 }
 
+/**
+ * 3. ORQUESTADOR DE NAVEGACIÓN
+ */
 @Composable
-fun MainScreen(viewModelFactory: MainViewModelFactory) {
-    // Obtenemos nuestro ViewModel
-    val viewModel: MainViewModel = viewModel(factory = viewModelFactory)
+fun AppNavigation() {
+    val navController = rememberNavController()
 
-    // Observamos en tiempo real lo que nos dice el Repositorio
-    val status by viewModel.connectionStatus.collectAsState()
-    val logs by viewModel.lastLogs.collectAsState()
+    // Instanciamos los dos cerebros pasándoles el mismo Director
+    val mainViewModel: MainViewModel = viewModel {
+        MainViewModel(AppDependencies.director)
+    }
+    val controlViewModel: ControlViewModel = viewModel {
+        ControlViewModel(AppDependencies.director)
+    }
 
-    // DISEÑO VISUAL
-    Column(modifier = Modifier.padding(16.dp)) {
-        Text(text = "TIAGO Controller", style = MaterialTheme.typography.headlineMedium)
+    // Observamos el semáforo global para movernos entre pantallas
+    val globalState by mainViewModel.globalState.collectAsState()
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Muestra el Estado
-        Text(text = "Estado: $status", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Botones
-        Row {
-            Button(onClick = { viewModel.connect() }) {
-                Text("Conectar")
+    // Lógica de navegación reactiva
+    LaunchedEffect(globalState) {
+        when (globalState) {
+            AppConstants.GlobalState.IDLE -> {
+                navController.navigate("login") {
+                    popUpTo(0) // Limpia el historial para no volver atrás
+                }
             }
-            Spacer(modifier = Modifier.width(16.dp))
-            Button(onClick = { viewModel.disconnect() }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) {
-                Text("Desconectar")
+            AppConstants.GlobalState.CONEXION_BACKEND -> {
+                navController.navigate("menu") {
+                    popUpTo(0)
+                }
+            }
+            AppConstants.GlobalState.SESION_INICIADA -> {
+                navController.navigate("control") {
+                    popUpTo(0)
+                }
             }
         }
+    }
 
-        Spacer(modifier = Modifier.height(32.dp))
+    // MAPA DE RUTAS OFICIAL
+    NavHost(
+        navController = navController,
+        startDestination = "login"
+    ) {
+        // Pantalla 1: Login
+        composable("login") {
+            LoginScreen(viewModel = mainViewModel)
+        }
 
-        // Consola de eventos
-        Text(text = "Consola de Red:", style = MaterialTheme.typography.titleSmall)
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f) // Ocupa el resto de la pantalla hacia abajo
-                .padding(top = 8.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant,
-            shape = MaterialTheme.shapes.medium
-        ) {
-            Text(
-                text = logs,
-                modifier = Modifier.padding(16.dp),
-                style = MaterialTheme.typography.bodyMedium
+        // Pantalla 2: Menú Intermedio
+        composable("menu") {
+            MenuScreen(viewModel = mainViewModel)
+        }
+
+        // Pantalla 3: Teleoperación con Joystick
+        composable("control") {
+            ControlScreen(
+                controlViewModel = controlViewModel,
+                mainViewModel = mainViewModel
             )
         }
     }
