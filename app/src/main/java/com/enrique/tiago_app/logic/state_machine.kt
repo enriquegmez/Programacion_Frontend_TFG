@@ -38,6 +38,10 @@ class ProtocolStateManager {
         _systemAlert.value = null
     }
 
+    fun showSystemAlert(message: String) {
+        _systemAlert.value = message
+    }
+
     // ==========================================
     // 1. VALIDACIÓN ANTES DE ENVIAR (can_transition)
     // ==========================================

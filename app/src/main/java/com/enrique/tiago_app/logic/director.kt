@@ -53,11 +53,27 @@ class ProtocolDirector(
         scope.launch {
             webSocketClient.isConnected.collect { connected ->
                 if (!connected) {
-                    // ¡El cable se ha cortado! Paramos el corazón y limpiamos la casa.
-                    Log.w(tag, "Detectada caída física del WebSocket. Reseteando protocolo.")
-                    sessionManager.stopHeartbeat() // Apagamos el latido
-                    sessionManager.clearSession()
-                    stateManager.triggerFullReset()
+                    if (stateManager.globalState.value != AppConstants.GlobalState.IDLE) {
+                        Log.e(tag, "¡Caída de red detectada! El servidor se ha desconectado de forma abrupta.")
+
+                        // 1. Limpiamos cualquier petición que se haya quedado a medias para evitar bloqueos
+                        pendingRequests.clear()
+
+                        // 2. Apagamos el latido y limpiamos sesión local
+                        sessionManager.stopHeartbeat()
+                        sessionManager.clearSession()
+
+                        // 3. Reseteamos la máquina de estados a la fuerza (vuelve a LoginScreen)
+                        stateManager.triggerFullReset()
+
+                        // 4. Le sacamos el pop-up rojo al usuario explicándole qué ha pasado
+                        stateManager.showSystemAlert("⚠️ Se ha perdido la conexión física con el servidor (¿Fallo de Wi-Fi o servidor apagado?).")
+                    } else {
+                        // Si ya estábamos en IDLE (desconectados limpiamente), solo limpiamos en silencio
+                        sessionManager.stopHeartbeat()
+                        sessionManager.clearSession()
+                        pendingRequests.clear()
+                    }
                 }
             }
         }
@@ -165,6 +181,24 @@ class ProtocolDirector(
         // Guardamos todo EXCEPTO los CONTROL_REQ y los PING_REQ rutinarios.
         if (type != AppConstants.MsgType.CONTROL_REQ && (type != AppConstants.MsgType.PING_REQ || isFirstPing)) {
             pendingRequests[currentId] = msg
+        }
+
+        scope.launch {
+            kotlinx.coroutines.delay(5000) // Damos 5 segundos de margen
+
+            val staleMsg = pendingRequests.remove(currentId)
+            if (staleMsg != null) {
+                Log.e(
+                    tag,
+                    "TIMEOUT CRÍTICO: El paquete [$type] ID $currentId se perdió. Provocando colapso de red por seguridad."
+                )
+
+                // 🐛 EL ARREGLO MAESTRO A TU DUDA:
+                // No reseteamos el estado a mano. Cortamos la conexión física.
+                // Esto obligará al backend a resetearse, y nuestro propio código
+                // del Error 2 (el vigilante) se encargará de resetear el frontend y avisar al usuario.
+                disconnectFromServer()
+            }
         }
 
         stateManager.commitRequestSent(msg)
