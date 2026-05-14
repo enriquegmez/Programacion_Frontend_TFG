@@ -15,6 +15,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.compose.material3.AlertDialog // ¡NUEVO IMPORT!
+import androidx.compose.material3.Button // ¡NUEVO IMPORT!
+import androidx.compose.material3.Text // ¡NUEVO IMPORT!
 
 // --- IMPORTS DE TU ARQUITECTURA (PROTOCOL) ---
 import com.enrique.tiago_app.protocol.MessageCodec
@@ -93,6 +96,8 @@ fun AppNavigation() {
     // Observamos el semáforo global para movernos entre pantallas
     val globalState by mainViewModel.globalState.collectAsState()
 
+    val systemAlert by mainViewModel.systemAlert.collectAsState()
+
     // Lógica de navegación reactiva
     LaunchedEffect(globalState) {
         when (globalState) {
@@ -112,6 +117,20 @@ fun AppNavigation() {
                 }
             }
         }
+    }
+
+    // ¡NUEVO! Lógica Visual del Dialogo de Alerta
+    if (systemAlert != null) {
+        AlertDialog(
+            onDismissRequest = { mainViewModel.clearAlert() }, // Cierra si se toca fuera
+            title = { Text("Aviso de Desconexión") },
+            text = { Text(systemAlert!!) },
+            confirmButton = {
+                Button(onClick = { mainViewModel.clearAlert() }) {
+                    Text("Entendido")
+                }
+            }
+        )
     }
 
     // MAPA DE RUTAS OFICIAL

@@ -37,6 +37,13 @@ class MainViewModel(
     // La UI observará esta variable para saber qué pantalla pintar.
     val globalState: StateFlow<String> = director.stateManager.globalState
 
+    // ¡NUEVO! Observamos las alertas del sistema (Desconexiones de emergencia)
+    val systemAlert: StateFlow<String?> = director.stateManager.systemAlert
+
+    fun clearAlert() {
+        director.stateManager.clearSystemAlert()
+    }
+
     // ==========================================
     // 3. EVENTOS DEL USUARIO (Teclear)
     // ==========================================

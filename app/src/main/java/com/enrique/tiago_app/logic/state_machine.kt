@@ -29,6 +29,14 @@ class ProtocolStateManager {
 
     private val _movementState = MutableStateFlow(AppConstants.MovementState.IDLE)
     val movementState: StateFlow<String> = _movementState.asStateFlow()
+    // Estado para avisos emergentes (Alertas al usuario)
+    private val _systemAlert = MutableStateFlow<String?>(null)
+
+    val systemAlert: StateFlow<String?> = _systemAlert.asStateFlow()
+
+    fun clearSystemAlert() {
+        _systemAlert.value = null
+    }
 
     // ==========================================
     // 1. VALIDACIÓN ANTES DE ENVIAR (can_transition)
@@ -93,13 +101,14 @@ class ProtocolStateManager {
     // ==========================================
     // 2. COMMIT AL ENVIAR (Pone la App en 'Cargando...')
     // ==========================================
+
+    fun notifyConnectingPhysical() {
+        if (_globalState.value == AppConstants.GlobalState.IDLE) {
+            transitionGlobal(AppConstants.GlobalState.ESPERANDO_CONEXION_BACKEND)
+        }
+    }
     fun commitRequestSent(reqMsg: RobotMessage) {
         val type = reqMsg.header.type
-
-        if (type == AppConstants.MsgType.PING_REQ && _globalState.value == AppConstants.GlobalState.IDLE) {
-            transitionGlobal(AppConstants.GlobalState.ESPERANDO_CONEXION_BACKEND)
-            return
-        }
 
         if (reqMsg.payload is CommandReqPayload) {
             when (reqMsg.payload.action) {
@@ -137,6 +146,8 @@ class ProtocolStateManager {
         if (respMsg.payload is AsyncNotifyPayload) {
             if (respMsg.payload.type == AppConstants.AsyncNotify.TYPE_EMERGENCY_STOP &&
                 respMsg.payload.details == AppConstants.AsyncNotify.DETAILS_ROBOT_LOST) {
+                // 📢 Lanzamos el aviso para la interfaz gráfica
+                _systemAlert.value = "⚠️ Se ha perdido la conexión con el robot físico o los nodos ROS 2 se han caído. Parada de emergencia activada."
                 triggerSessionReset()
             }
             return true

@@ -68,9 +68,17 @@ class ProtocolDirector(
     // ==========================================
 
     fun connectToServer(ip: String, port: Int) {
-        // Ahora solo lanzamos la conexión. El Heartbeat arrancará solo gracias al Flow de arriba.
+        // 1. ¡Feedback Inmediato! El circulito empieza a girar ya mismo.
+        stateManager.notifyConnectingPhysical()
+
         scope.launch {
-            webSocketClient.connect(ip, port)
+            try {
+                webSocketClient.connect(ip, port)
+            } catch (e: Exception) {
+                // Si la red física falla (ej: no hay WiFi), abortamos y quitamos la carga
+                Log.e(tag, "Fallo inmediato al intentar conectar físicamente: ${e.message}")
+                stateManager.triggerFullReset()
+            }
         }
     }
 
@@ -152,7 +160,7 @@ class ProtocolDirector(
 
         // Averiguamos si es el "Primer Ping" (el de Handshake)
         val isFirstPing = type == AppConstants.MsgType.PING_REQ &&
-                stateManager.globalState.value == AppConstants.GlobalState.IDLE
+                stateManager.globalState.value == AppConstants.GlobalState.ESPERANDO_CONEXION_BACKEND
 
         // Guardamos todo EXCEPTO los CONTROL_REQ y los PING_REQ rutinarios.
         if (type != AppConstants.MsgType.CONTROL_REQ && (type != AppConstants.MsgType.PING_REQ || isFirstPing)) {
@@ -241,7 +249,7 @@ class ProtocolDirector(
         }
 
         if (reqMsg != null) {
-            val isSyncOk = commitAndCheckSync(reqMsg, respMsg)
+            commitAndCheckSync(reqMsg, respMsg)
 
             // Si el backend nos confirmó el 'END', cortamos el cable físicamente
             if (reqMsg.payload is CommandReqPayload && reqMsg.payload.action == AppConstants.Action.END) {
@@ -251,16 +259,35 @@ class ProtocolDirector(
                 }
             }
         } else {
-            Log.w(tag, "Recibida respuesta huérfana (sin petición pendiente): ${respMsg.header.type}")
+            val payload = respMsg.payload
+
+            if (respMsg.header.type == AppConstants.MsgType.RESP &&
+                payload is GenericRespPayload &&
+                payload.respType == AppConstants.RespType.CONTROL_RESP &&
+                !payload.success // ¡Solo si ha fallado!
+            ) {
+                Log.w(tag, "Detectado rechazo de velocidad en el Backend. Forzando detención.")
+
+                // Fabricamos la petición fantasma para engañar al Semáforo
+                val dummyControlReq = RobotMessage(
+                    header = MessageHeader(respMsg.header.msgId, AppConstants.MsgType.CONTROL_REQ, "", 0.0),
+                    payload = EmptyPayload() // Al semáforo solo le importa el header.type
+                )
+
+                // Al pasar esto, el StateManager ejecutará el aborto a IDLE
+                commitAndCheckSync(dummyControlReq, respMsg)
+
+            } else {
+                Log.w(tag, "Recibida respuesta huérfana inmanejable (sin petición pendiente): ${respMsg.header.type}")
+            }
         }
     }
-    private fun commitAndCheckSync(reqMsg: RobotMessage, respMsg: RobotMessage): Boolean {
+    private fun commitAndCheckSync(reqMsg: RobotMessage, respMsg: RobotMessage){
         val isSyncOk = stateManager.commitResponseReceived(reqMsg, respMsg)
         if (!isSyncOk) {
             Log.e(tag, "Desincronización crítica de estados detectada en respuesta a ${reqMsg.header.type}. Cortando conexión por seguridad.")
             disconnectFromServer()
         }
-        return isSyncOk
     }
 }
 
