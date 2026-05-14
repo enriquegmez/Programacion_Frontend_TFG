@@ -39,7 +39,6 @@ class ProtocolDirector(
 
     // La libreta donde recordamos qué enviamos
     private val pendingRequests = ConcurrentHashMap<Long, RobotMessage>()
-    private var msgIdCounter: Long = 1L
 
     init {
         // 1. Escuchar los mensajes entrantes (El SharedFlow que hiciste)
@@ -157,11 +156,11 @@ class ProtocolDirector(
     // CEREBRO DE ENVÍO (Outbound)
     // ==========================================
     private fun dispatchMessage(type: String, payload: Payload) {
-        val currentId = msgIdCounter++
+        val finalId = codec.getNextMsgId() // Usando el AtomicLong que corregimos
         val sessionId = sessionManager.getSessionId() // Ahora sabemos que devuelve un String no nulo
 
         val header = MessageHeader(
-            msgId = currentId,
+            msgId = finalId,
             type = type,
             sessionId = sessionId,
             timestamp = 0.0
@@ -180,17 +179,17 @@ class ProtocolDirector(
 
         // Guardamos todo EXCEPTO los CONTROL_REQ y los PING_REQ rutinarios.
         if (type != AppConstants.MsgType.CONTROL_REQ && (type != AppConstants.MsgType.PING_REQ || isFirstPing)) {
-            pendingRequests[currentId] = msg
+            pendingRequests[finalId] = msg
         }
 
         scope.launch {
             kotlinx.coroutines.delay(5000) // Damos 5 segundos de margen
 
-            val staleMsg = pendingRequests.remove(currentId)
+            val staleMsg = pendingRequests.remove(finalId)
             if (staleMsg != null) {
                 Log.e(
                     tag,
-                    "TIMEOUT CRÍTICO: El paquete [$type] ID $currentId se perdió. Provocando colapso de red por seguridad."
+                    "TIMEOUT CRÍTICO: El paquete [$type] ID $finalId se perdió. Provocando colapso de red por seguridad."
                 )
 
                 // 🐛 EL ARREGLO MAESTRO A TU DUDA:
@@ -206,7 +205,7 @@ class ProtocolDirector(
         // Lanzamos una corrutina porque `webSocketClient.send` es una función `suspend`
         scope.launch {
             val jsonString = codec.encode(msg)
-            Log.i(tag, "Enviando mensaje [$type] ID: $currentId")
+            Log.i(tag, "Enviando mensaje [$type] ID: $finalId")
             webSocketClient.send(jsonString)
         }
     }

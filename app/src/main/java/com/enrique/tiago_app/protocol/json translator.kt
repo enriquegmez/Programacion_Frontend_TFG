@@ -5,6 +5,7 @@ import com.enrique.tiago_app.utils.AppConstants
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * MessageCodec (El Traductor - Frontera JSON)
@@ -19,10 +20,11 @@ class MessageCodec {
         explicitNulls = false
     }
 
-    private var msgIdCounter: Long = 1L
+    private val msgIdCounter = AtomicLong(1L)
 
-    private fun getNextMsgId(): Long {
-        return msgIdCounter++
+    // Cambia la función getNextMsgId para que sea segura:
+    fun getNextMsgId(): Long {
+        return msgIdCounter.getAndIncrement()
     }
 
     fun decode(rawString: String): RobotMessage {
@@ -66,9 +68,7 @@ class MessageCodec {
     }
 
     fun encode(msg: RobotMessage): String {
-        val finalMsgId = if (msg.header.msgId <= 0L) getNextMsgId() else msg.header.msgId
         val finalHeader = msg.header.copy(
-            msgId = finalMsgId,
             timestamp = System.currentTimeMillis() / 1000.0
         )
 
