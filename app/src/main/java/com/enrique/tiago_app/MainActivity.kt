@@ -29,7 +29,7 @@ import com.enrique.tiago_app.ui.logic.MainViewModel
 import com.enrique.tiago_app.ui.logic.ControlViewModel
 
 // --- IMPORTS DE TUS PANTALLAS (SCREENS) ---
-import com.enrique.tiago_app.ui.screens.LoginScreen
+import com.enrique.tiago_app.ui.screens.WebsocketScreen
 import com.enrique.tiago_app.ui.screens.MenuScreen
 import com.enrique.tiago_app.ui.screens.ControlScreen
 
@@ -121,7 +121,7 @@ fun AppNavigation() {
     ) {
         // Pantalla 1: Login
         composable("login") {
-            LoginScreen(viewModel = mainViewModel)
+            WebsocketScreen(viewModel = mainViewModel)
         }
 
         // Pantalla 2: Menú Intermedio

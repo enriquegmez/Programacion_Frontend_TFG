@@ -17,6 +17,7 @@ import com.enrique.tiago_app.protocol.ControlReqPayload
 import com.enrique.tiago_app.protocol.ControlData
 import com.enrique.tiago_app.protocol.AsyncNotifyPayload
 import com.enrique.tiago_app.protocol.GenericRespPayload
+import com.enrique.tiago_app.protocol.ProtocolErrorPayload
 
 // IMPORTS DE TU CAPA DE COMUNICACIÓN (Asegúrate de que la ruta es correcta)
 import com.enrique.tiago_app.communication.WebSocketClient
@@ -52,8 +53,9 @@ class ProtocolDirector(
         scope.launch {
             webSocketClient.isConnected.collect { connected ->
                 if (!connected) {
-                    // Si el cable físico se corta, limpiamos toda la sesión lógica y la UI
+                    // ¡El cable se ha cortado! Paramos el corazón y limpiamos la casa.
                     Log.w(tag, "Detectada caída física del WebSocket. Reseteando protocolo.")
+                    sessionManager.stopHeartbeat() // Apagamos el latido
                     sessionManager.clearSession()
                     stateManager.triggerFullReset()
                 }
@@ -66,12 +68,9 @@ class ProtocolDirector(
     // ==========================================
 
     fun connectToServer(ip: String, port: Int) {
+        // Ahora solo lanzamos la conexión. El Heartbeat arrancará solo gracias al Flow de arriba.
         scope.launch {
             webSocketClient.connect(ip, port)
-            // Cuando arranca la conexión, encendemos el corazón (Heartbeat)
-            sessionManager.startHeartbeat(scope) {
-                sendPing() // Le decimos que el latido consiste en ejecutar esta función
-            }
         }
     }
 
@@ -151,7 +150,12 @@ class ProtocolDirector(
             return
         }
 
-        if (type != AppConstants.MsgType.PING_REQ && type != AppConstants.MsgType.CONTROL_REQ) {
+        // Averiguamos si es el "Primer Ping" (el de Handshake)
+        val isFirstPing = type == AppConstants.MsgType.PING_REQ &&
+                stateManager.globalState.value == AppConstants.GlobalState.IDLE
+
+        // Guardamos todo EXCEPTO los CONTROL_REQ y los PING_REQ rutinarios.
+        if (type != AppConstants.MsgType.CONTROL_REQ && (type != AppConstants.MsgType.PING_REQ || isFirstPing)) {
             pendingRequests[currentId] = msg
         }
 
@@ -169,26 +173,75 @@ class ProtocolDirector(
     // CEREBRO DE RECEPCIÓN (Inbound)
     // ==========================================
     private fun handleIncomingMessage(rawJson: String) {
-        val respMsg = codec.decode(rawJson)
-
-        if (respMsg.header.type == AppConstants.MsgType.PROTOCOL_ERROR) {
-            Log.e(tag, "El servidor ha reportado un error de protocolo.")
+        val respMsg: RobotMessage
+        try {
+            respMsg = codec.decode(rawJson)
+        } catch (e: Exception) {
+            // Si el backend manda algo que Kotlin no puede traducir a nuestras data classes,
+            // lo registramos en el Logcat y abortamos silenciosamente sin que la app crashee.
+            Log.e(tag, "Mensaje ignorado por formato inválido o desconocido: ${e.message}")
             return
         }
 
+        // 0. ERRORES DE PROTOCOLO
+        if (respMsg.header.type == AppConstants.MsgType.PROTOCOL_ERROR) {
+            val errorDesc = (respMsg.payload as? ProtocolErrorPayload)?.description ?: "Error desconocido"
+            Log.e(tag, "El servidor ha reportado un error de protocolo: $errorDesc")
+
+            // Usamos tu idea: buscamos la petición fallida por su msgId
+            val failedReq = pendingRequests.remove(respMsg.header.msgId)
+
+            if (failedReq != null) {
+                // Encontramos quién tuvo la culpa. Le pasamos el error al Semáforo.
+                // Tu StateManager ya está preparado: verá que 'success' es falso (porque es ProtocolErrorPayload)
+                // y revertirá la interfaz al estado anterior de forma segura.
+                commitAndCheckSync(failedReq, respMsg)
+            } else {
+                // ¡AQUÍ ESTÁ LA MAGIA DE LA SINCRONIZACIÓN!
+                // Es un error incomprensible (basura JSON) o un pánico del servidor.
+                // Cortamos la conexión física por lo sano.
+                // El servidor lo detectará y ambos os resetearéis a cero al mismo tiempo.
+                Log.e(tag, "Error crítico inmanejable. Cortando WebSocket para forzar sincronización.")
+                disconnectFromServer()
+            }
+            return // Ahora SÍ es seguro hacer el return aquí.
+        }
+
+        // 1. RECEPCIÓN DEL SESSION ID (Handshake inicial)
         if (respMsg.header.type == AppConstants.MsgType.ASYNC_NOTIFY && respMsg.payload is AsyncNotifyPayload) {
             if (respMsg.payload.type == AppConstants.AsyncNotify.TYPE_SESSION_ID) {
                 val newSessionId = respMsg.payload.details.substringAfter(":")
                 Log.i(tag, "Sesión asignada por el servidor: $newSessionId")
                 sessionManager.saveSessionId(newSessionId)
+                // ¡AHORA SÍ! Ya tenemos ID oficial, arrancamos el corazón.
+                // Esto provocará que se llame a sendPing() inmediatamente.
+                sessionManager.startHeartbeat(scope) {
+                    sendPing()
+                }
                 return
             }
         }
 
+        // 2. EXTRAER DE LA LIBRETA (Tu optimización)
+        // Al usar .remove(), sacamos el mensaje de la lista para SIEMPRE en un solo paso.
         val reqMsg = pendingRequests.remove(respMsg.header.msgId)
 
+        // 3. LA VÍA RÁPIDA DE LOS ACKs
+        if (respMsg.header.type == AppConstants.MsgType.ACK) {
+            if (reqMsg != null && reqMsg.header.type == AppConstants.MsgType.PING_REQ) {
+                // Era el primer ping de todos (el único que guardamos).
+                // Se lo pasamos al Semáforo para que quite la pantalla de carga.
+                commitAndCheckSync(reqMsg, respMsg)
+            }
+
+            // Si reqMsg es null -> Era un ping rutinario.
+            // Si reqMsg NO es PING_REQ -> Era un ACK de otra cosa (y ya se eliminó de la lista arriba).
+            // En cualquier caso, salimos sin hacer ruido.
+            return
+        }
+
         if (reqMsg != null) {
-            stateManager.commitResponseReceived(reqMsg, respMsg)
+            val isSyncOk = commitAndCheckSync(reqMsg, respMsg)
 
             // Si el backend nos confirmó el 'END', cortamos el cable físicamente
             if (reqMsg.payload is CommandReqPayload && reqMsg.payload.action == AppConstants.Action.END) {
@@ -198,11 +251,16 @@ class ProtocolDirector(
                 }
             }
         } else {
-            val dummyReq = RobotMessage(
-                header = MessageHeader(0, respMsg.header.type, "", 0.0),
-                payload = EmptyPayload()
-            )
-            stateManager.commitResponseReceived(dummyReq, respMsg)
+            Log.w(tag, "Recibida respuesta huérfana (sin petición pendiente): ${respMsg.header.type}")
         }
     }
+    private fun commitAndCheckSync(reqMsg: RobotMessage, respMsg: RobotMessage): Boolean {
+        val isSyncOk = stateManager.commitResponseReceived(reqMsg, respMsg)
+        if (!isSyncOk) {
+            Log.e(tag, "Desincronización crítica de estados detectada en respuesta a ${reqMsg.header.type}. Cortando conexión por seguridad.")
+            disconnectFromServer()
+        }
+        return isSyncOk
+    }
 }
+

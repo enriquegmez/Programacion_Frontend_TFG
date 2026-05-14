@@ -118,14 +118,19 @@ class ProtocolStateManager {
     // ==========================================
     // 3. COMMIT AL RECIBIR (Resuelve el 'Cargando...')
     // ==========================================
-    fun commitResponseReceived(reqMsg: RobotMessage, respMsg: RobotMessage) {
+    // ==========================================
+    // 3. COMMIT AL RECIBIR (Resuelve el 'Cargando...')
+    // ==========================================
+    fun commitResponseReceived(reqMsg: RobotMessage, respMsg: RobotMessage): Boolean { // ¡NUEVO: Devuelve Boolean!
 
         // 1. Manejo del Primer Ping -> ACK
         if (reqMsg.header.type == AppConstants.MsgType.PING_REQ && respMsg.header.type == AppConstants.MsgType.ACK) {
             if (_globalState.value == AppConstants.GlobalState.ESPERANDO_CONEXION_BACKEND) {
                 transitionGlobal(AppConstants.GlobalState.CONEXION_BACKEND)
+                return true
             }
-            return
+            Log.e(tag, "Desincronización fatal: Recibido ACK inicial pero el estado es ${_globalState.value}")
+            return false // ¡Bandera Roja!
         }
 
         // 2. Avisos Asíncronos (Watchdog)
@@ -134,10 +139,9 @@ class ProtocolStateManager {
                 respMsg.payload.details == AppConstants.AsyncNotify.DETAILS_ROBOT_LOST) {
                 triggerSessionReset()
             }
-            return
+            return true
         }
 
-        // Extraemos si ha habido éxito (La mayoría usan GenericRespPayload u otros que heredan success)
         val success = when (val p = respMsg.payload) {
             is GenericRespPayload -> p.success
             is QueryRespPayload -> p.success
@@ -146,50 +150,60 @@ class ProtocolStateManager {
             else -> false
         }
 
-        // 3. Lógica según lo que habíamos pedido (reqMsg)
+        // 3. Lógica según lo que habíamos pedido
         if (reqMsg.payload is CommandReqPayload) {
             val action = reqMsg.payload.action
-            if (success) {
-                when (action) {
-                    AppConstants.Action.CONNECT -> {
+            when (action) {
+                AppConstants.Action.CONNECT -> {
+                    if (_globalState.value != AppConstants.GlobalState.ESPERANDO_INICIO_SESION) return false
+                    if (success) {
                         transitionGlobal(AppConstants.GlobalState.SESION_INICIADA)
                         transitionMovement(AppConstants.MovementState.IDLE)
-                    }
-                    AppConstants.Action.DISCONNECT -> {
+                    } else transitionGlobal(AppConstants.GlobalState.CONEXION_BACKEND)
+                }
+
+                AppConstants.Action.DISCONNECT -> {
+                    if (_globalState.value != AppConstants.GlobalState.ESPERANDO_CIERRE_SESION) return false
+                    if (success) {
                         transitionGlobal(AppConstants.GlobalState.CONEXION_BACKEND)
                         transitionMovement(AppConstants.MovementState.IDLE)
-                    }
-                    AppConstants.Action.END -> triggerFullReset() // Volvemos a Pantalla 1
+                    } else transitionGlobal(AppConstants.GlobalState.SESION_INICIADA)
                 }
-            } else { // Si hubo error, volvemos al estado desde el que iniciamos la petición
-                when (action) {
-                    AppConstants.Action.CONNECT -> transitionGlobal(AppConstants.GlobalState.CONEXION_BACKEND)
-                    AppConstants.Action.DISCONNECT -> transitionGlobal(AppConstants.GlobalState.SESION_INICIADA)
-                    AppConstants.Action.END -> transitionGlobal(AppConstants.GlobalState.CONEXION_BACKEND)
+
+                AppConstants.Action.END -> {
+                    if (_globalState.value != AppConstants.GlobalState.ESPERANDO_DESCONEXION_BACKEND) return false
+                    if (success) triggerFullReset() else transitionGlobal(AppConstants.GlobalState.CONEXION_BACKEND)
                 }
             }
+            return true
         }
         else if (reqMsg.payload is ControlModeReqPayload) {
             val event = reqMsg.payload.event
-            if (success) {
-                when (event) {
-                    AppConstants.ControlEvent.START -> transitionMovement(AppConstants.MovementState.ENVIANDO_INFO)
-                    AppConstants.ControlEvent.STOP -> transitionMovement(AppConstants.MovementState.IDLE)
+            when (event) {
+                AppConstants.ControlEvent.START -> {
+                    if (_movementState.value != AppConstants.MovementState.ESPERANDO_PERMISO_ENVIO_INFO) return false
+                    if (success) transitionMovement(AppConstants.MovementState.ENVIANDO_INFO)
+                    else transitionMovement(AppConstants.MovementState.IDLE)
                 }
-            } else { // Si hubo error, volvemos al subestado anterior
-                when (event) {
-                    AppConstants.ControlEvent.START -> transitionMovement(AppConstants.MovementState.IDLE)
-                    AppConstants.ControlEvent.STOP -> transitionMovement(AppConstants.MovementState.ENVIANDO_INFO)
+
+                AppConstants.ControlEvent.STOP -> {
+                    if (_movementState.value != AppConstants.MovementState.ESPERANDO_TERMINAR_ENVIO_INFO) return false
+                    if (success) transitionMovement(AppConstants.MovementState.IDLE)
+                    else transitionMovement(AppConstants.MovementState.ENVIANDO_INFO)
                 }
             }
+            return true
         }
         else if (reqMsg.header.type == AppConstants.MsgType.CONTROL_REQ) {
-            // Regla estricta: si falla un ControlReq en pleno movimiento, abortamos a IDLE
+            if (_movementState.value != AppConstants.MovementState.ENVIANDO_INFO) return false
             if (!success) {
                 Log.w(tag, "Error enviando velocidad al backend. Forzando subestado a IDLE.")
                 transitionMovement(AppConstants.MovementState.IDLE)
             }
+            return true
         }
+
+        return false // Si llega algo que no cuadra en ninguno de los if anteriores
     }
 
     // ==========================================

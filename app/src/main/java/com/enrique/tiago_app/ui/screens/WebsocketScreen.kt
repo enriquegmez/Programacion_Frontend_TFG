@@ -32,7 +32,7 @@ import com.enrique.tiago_app.utils.AppConstants
  * Recoge la IP y el Puerto para establecer la conexión física (WebSocket).
  */
 @Composable
-fun LoginScreen(viewModel: MainViewModel) {
+fun WebsocketScreen(viewModel: MainViewModel) {
     // 1. Nos suscribimos a los datos del cerebro (ViewModel)
     val ip by viewModel.ipAddress.collectAsState()
     val port by viewModel.port.collectAsState()
