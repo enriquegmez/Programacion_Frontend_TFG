@@ -261,6 +261,17 @@ class ProtocolDirector(
                 }
                 return
             }
+            // 🚨 NUEVA LÓGICA: Error 2 Solucionado
+            else if (respMsg.payload.type== AppConstants.AsyncNotify.TYPE_EMERGENCY_STOP) {
+                Log.e(tag, "¡NOTIFICACIÓN DE EMERGENCIA! El robot se ha desconectado del servidor.")
+
+                // 1. Informamos al usuario con un popup
+                stateManager.showSystemAlert("⚠️ Se ha perdido la conexión con el robot Tiago. Operación abortada.")
+
+                // 2. Reseteamos la máquina de estados local para volver al Menú
+                stateManager.triggerSessionReset()
+            }
+            return
         }
 
         // 2. EXTRAER DE LA LIBRETA (Tu optimización)
