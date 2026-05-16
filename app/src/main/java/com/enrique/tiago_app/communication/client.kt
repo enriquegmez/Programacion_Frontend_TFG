@@ -19,7 +19,8 @@ import kotlin.time.Duration.Companion.seconds
  * Capa de transporte puro. No sabe nada de JSONs ni del protocolo del robot.
  */
 class WebSocketClient {
-    private val TAG = "WebSocketClient"
+    //private val TAG = "WebSocketClient"
+    private val TAG = "TIAGO_ProtocolDirector"
 
     // 1. Configuramos el motor Ktor
     private val client = HttpClient(CIO) {

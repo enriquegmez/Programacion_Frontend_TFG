@@ -4,6 +4,8 @@ import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.flow.first
 
 // Constantes y Modelos
 import com.enrique.tiago_app.utils.AppConstants
@@ -35,7 +37,8 @@ class ProtocolDirector(
     val stateManager: ProtocolStateManager,
     private val sessionManager: SessionManager
 ) {
-    private val tag = "ProtocolDirector"
+    //private val tag = "ProtocolDirector"
+    private val tag = "TIAGO_ProtocolDirector"
 
     // La libreta donde recordamos qué enviamos
     private val pendingRequests = ConcurrentHashMap<Long, RobotMessage>()
@@ -83,16 +86,37 @@ class ProtocolDirector(
     // ==========================================
 
     fun connectToServer(ip: String, port: Int) {
-        // 1. ¡Feedback Inmediato! El circulito empieza a girar ya mismo.
+        // 1. ¡Feedback Inmediato! El circulito empieza a girar
         stateManager.notifyConnectingPhysical()
 
+        // 2. Mandamos al cartero a intentar conectar en un hilo independiente.
+        // Como su función 'connect' atrapa los errores por dentro, la dejamos a su aire.
+        scope.launch {
+            webSocketClient.connect(ip, port)
+        }
+
+        // 3. EL CRONÓMETRO VIGÍA
         scope.launch {
             try {
-                webSocketClient.connect(ip, port)
+                // Esperamos un máximo de 5 segundos a que la variable 'isConnected' pase a ser TRUE
+                val connectionSuccess = withTimeoutOrNull(5000L) {
+                    webSocketClient.isConnected.first { it } // Espera hasta que sea true
+                    true
+                }
+
+                if (connectionSuccess == null) {
+                    // Si el cronómetro llega a 0 y nunca fue true...
+                    Log.e(tag, "Timeout: El servidor en $ip:$port no respondió o rechazó la conexión.")
+
+                    webSocketClient.disconnect() // Forzamos abortar cualquier intento de Ktor
+                    stateManager.triggerFullReset() // Apagamos el spinner
+
+                    // 📢 Lanzamos el popup
+                    stateManager.showSystemAlert("Error: El servidor en la IP $ip y puerto $port no está abierto o no es accesible.")
+                }
             } catch (e: Exception) {
-                // Si la red física falla (ej: no hay WiFi), abortamos y quitamos la carga
-                Log.e(tag, "Fallo inmediato al intentar conectar físicamente: ${e.message}")
                 stateManager.triggerFullReset()
+                stateManager.showSystemAlert("Error interno al evaluar la red: ${e.message}")
             }
         }
     }
@@ -128,11 +152,12 @@ class ProtocolDirector(
         dispatchMessage(AppConstants.MsgType.COMMAND_REQ, payload)
     }
 
-    fun sendStartMovement() {
+    fun sendStartMovement(customTopic: String) {
+        val finalTopic = customTopic.ifBlank { AppConstants.Robot.DEFAULT_CMD_VEL_TOPIC }
         val payload = ControlModeReqPayload(
             event = AppConstants.ControlEvent.START,
             type = "TELEOP",
-            topic = AppConstants.Robot.DEFAULT_CMD_VEL_TOPIC
+            topic = finalTopic
         )
         dispatchMessage(AppConstants.MsgType.CONTROL_MODE_REQ, payload)
     }
@@ -205,7 +230,9 @@ class ProtocolDirector(
         // Lanzamos una corrutina porque `webSocketClient.send` es una función `suspend`
         scope.launch {
             val jsonString = codec.encode(msg)
-            Log.i(tag, "Enviando mensaje [$type] ID: $finalId")
+            if (type != AppConstants.MsgType.PING_REQ && type != AppConstants.MsgType.CONTROL_REQ) {
+                Log.i(tag, "Enviando mensaje [$type] ID: $finalId")
+            }
             webSocketClient.send(jsonString)
         }
     }
@@ -322,7 +349,10 @@ class ProtocolDirector(
                 commitAndCheckSync(dummyControlReq, respMsg)
 
             } else {
-                Log.w(tag, "Recibida respuesta huérfana inmanejable (sin petición pendiente): ${respMsg.header.type}")
+                if (respMsg.header.type == AppConstants.MsgType.RESP &&
+                    payload is GenericRespPayload &&
+                    payload.respType != AppConstants.RespType.CONTROL_RESP)
+                    Log.w(tag, "Recibida respuesta huérfana inmanejable (sin petición pendiente): ${respMsg.header.type}")
             }
         }
     }

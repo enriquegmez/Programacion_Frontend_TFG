@@ -21,7 +21,8 @@ import com.enrique.tiago_app.protocol.StreamRespPayload
  * Trabaja ÚNICAMENTE con objetos Kotlin puros, desconociendo por completo la existencia de JSON.
  */
 class ProtocolStateManager {
-    private val tag = "ProtocolStateManager"
+
+    private val tag = "TIAGO_ProtocolDirector"
 
     // Estados observables por la Interfaz de Usuario (UI)
     private val _globalState = MutableStateFlow(AppConstants.GlobalState.IDLE)
@@ -197,8 +198,18 @@ class ProtocolStateManager {
             when (event) {
                 AppConstants.ControlEvent.START -> {
                     if (_movementState.value != AppConstants.MovementState.ESPERANDO_PERMISO_ENVIO_INFO) return false
-                    if (success) transitionMovement(AppConstants.MovementState.ENVIANDO_INFO)
-                    else transitionMovement(AppConstants.MovementState.IDLE)
+                    if (success) {
+                        transitionMovement(AppConstants.MovementState.ENVIANDO_INFO)
+                    }
+                    else {
+                        transitionMovement(AppConstants.MovementState.IDLE)
+                        // 2. Extraemos el mensaje de error de Python (o ponemos uno por defecto)
+                        if (respMsg.payload is GenericRespPayload) {
+                            val errorReason = respMsg.payload.details ?: "El topic introducido no es válido."
+                            // 3. Mostramos el Popup
+                            showSystemAlert("No se pudo iniciar el control: $errorReason")
+                        }
+                    }
                 }
 
                 AppConstants.ControlEvent.STOP -> {

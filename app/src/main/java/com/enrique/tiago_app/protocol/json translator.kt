@@ -11,7 +11,8 @@ import java.util.concurrent.atomic.AtomicLong
  * MessageCodec (El Traductor - Frontera JSON)
  */
 class MessageCodec {
-    private val tag = "MessageCodec"
+
+    private val tag = "TIAGO_ProtocolDirector"
 
     @OptIn(ExperimentalSerializationApi::class)
     private val jsonFormat = Json {
@@ -101,7 +102,8 @@ class MessageCodec {
         }
 
         val finalJsonString = jsonFormat.encodeToString(finalJsonObj)
-        Log.d(tag, "Codificado (OUT): $finalJsonString")
+            if (finalHeader.type != AppConstants.MsgType.PING_REQ && finalHeader.type != AppConstants.MsgType.CONTROL_REQ)
+                Log.d(tag, "Codificado (OUT): $finalJsonString")
         return finalJsonString
     }
 

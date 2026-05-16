@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material3.OutlinedTextField
 
 // IMPORTS DE TU ARQUITECTURA
 import com.enrique.tiago_app.ui.logic.ControlViewModel
@@ -42,6 +43,7 @@ fun ControlScreen(
 ) {
     // 1. Observamos el estado del semáforo de movimiento
     val movState by controlViewModel.movementState.collectAsState()
+    val topicText by controlViewModel.targetTopic.collectAsState()
 
     // 2. Variables derivadas para simplificar la UI
     val isTeleopActive = (movState == AppConstants.MovementState.ENVIANDO_INFO)
@@ -67,6 +69,20 @@ fun ControlScreen(
             )
 
             Spacer(modifier = Modifier.height(24.dp))
+
+            // 🎯 AQUÍ VA LA CAJA DE TEXTO PARA EL TÓPICO
+            OutlinedTextField(
+                value = topicText,
+                onValueChange = { controlViewModel.onTopicChange(it) },
+                label = { Text("Target Topic (Opcional)") },
+                placeholder = { Text("Ej: /joy_vel o /key_vel") },
+                singleLine = true,
+                // Se bloquea para que no puedan cambiarlo mientras conducen
+                enabled = !isTeleopActive && !isLoading,
+                modifier = Modifier.fillMaxWidth(0.8f)
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
 
             // Fila con el Switch de Habilitación
             Row(verticalAlignment = Alignment.CenterVertically) {

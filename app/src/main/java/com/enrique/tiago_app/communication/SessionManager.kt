@@ -8,7 +8,8 @@ import kotlinx.coroutines.*
  * Almacena el ID de la sesión lógica y mantiene viva la conexión (Heartbeat).
  */
 class SessionManager {
-    private val TAG = "SessionManager"
+    //private val TAG = "SessionManager"
+    private val TAG = "TIAGO_ProtocolDirector"
 
     // ==========================================
     // 1. GESTIÓN DE LA SESIÓN LÓGICA
@@ -31,10 +32,6 @@ class SessionManager {
         Log.d(TAG, "Limpiando sesión actual...")
         _sessionId = null
         stopHeartbeat() // Si borramos la sesión, dejamos de latir
-    }
-
-    fun hasValidSession(): Boolean {
-        return _sessionId != null
     }
 
     // ==========================================

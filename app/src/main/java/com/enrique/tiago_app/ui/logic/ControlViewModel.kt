@@ -6,6 +6,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 // IMPORTS DE TU ARQUITECTURA
 import com.enrique.tiago_app.logic.ProtocolDirector
@@ -25,6 +27,9 @@ class ControlViewModel(
 
     // El semáforo específico de la submáquina de movimiento
     val movementState: StateFlow<String> = director.stateManager.movementState
+
+    private val _targetTopic = MutableStateFlow("")
+    val targetTopic: StateFlow<String> = _targetTopic.asStateFlow()
 
     // ==========================================
     // 2. MEMORIA DEL JOYSTICK
@@ -79,12 +84,20 @@ class ControlViewModel(
     fun toggleTeleop(enable: Boolean) {
         if (enable) {
             // Queremos encender
-            director.sendStartMovement()
+            // ¡EL FIX! Borramos cualquier memoria residual de sesiones pasadas
+            currentV = 0f
+            currentW = 0f
+            director.sendStartMovement(_targetTopic.value)
         } else {
             // Queremos apagar. Primero, por seguridad, reseteamos el joystick interno
             currentV = 0f
             currentW = 0f
             director.sendStopMovement()
         }
+    }
+
+    // 2. Añade esta función para que la UI pueda actualizar el texto
+    fun onTopicChange(newTopic: String) {
+        _targetTopic.value = newTopic
     }
 }

@@ -59,7 +59,7 @@ fun JoystickComponent(
 
         // 2. Traducción a Robótica (ROS Estándar):
         // Mover el dedo HACIA ARRIBA es -Y en la pantalla, pero queremos que sea +V (avanzar)
-        val v = -normalizedY
+        val v = normalizedY * (-1)
         // Mover el dedo HACIA LA IZQUIERDA es -X en la pantalla, pero queremos que sea +W (giro izquierda)
         val w = -normalizedX
 
