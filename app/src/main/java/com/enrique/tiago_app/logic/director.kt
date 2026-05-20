@@ -153,15 +153,13 @@ class ProtocolDirector(
     }
 
     fun sendStartMovement(customTopic: String) {
-        val finalTopic = customTopic.ifBlank { AppConstants.Robot.DEFAULT_CMD_VEL_TOPIC }
         val payload = ControlModeReqPayload(
             event = AppConstants.ControlEvent.START,
             type = "TELEOP",
-            topic = finalTopic
+            topic = customTopic.ifBlank { null }
         )
         dispatchMessage(AppConstants.MsgType.CONTROL_MODE_REQ, payload)
     }
-
     fun sendStopMovement() {
         val payload = ControlModeReqPayload(
             event = AppConstants.ControlEvent.STOP,
