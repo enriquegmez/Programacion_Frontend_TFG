@@ -50,15 +50,29 @@ class ControlViewModel(
      * Bucle infinito ligado al ciclo de vida del ViewModel.
      * En robótica, es crucial enviar comandos a una frecuencia fija (ej: 10Hz).
      */
+    private var consecutiveZeros = 0
+
     private fun startTeleopLoop() {
         viewModelScope.launch {
             while (isActive) {
-                // Solo disparamos mensajes a la red si el servidor nos dio el OK definitivo
                 if (movementState.value == AppConstants.MovementState.ENVIANDO_INFO) {
-                    director.sendJoystickVelocity(currentV, currentW)
+
+                    if (currentV == 0f && currentW == 0f) {
+                        consecutiveZeros++
+                        // Cuando está parado, enviamos la velocidad 0.0 cada 4 ciclos (400ms -> 2.5Hz)
+                        // Esto mantiene vivo el Watchdog del servidor ahorrando un 75% de batería y red
+                        if (consecutiveZeros <= 3 || consecutiveZeros % 4 == 0) {
+                            director.sendJoystickVelocity(currentV, currentW)
+                        }
+                    } else {
+                        // El usuario está moviendo el joystick
+                        consecutiveZeros = 0
+                        // Enviamos a máxima velocidad (cada 100ms -> 10Hz)
+                        director.sendJoystickVelocity(currentV, currentW)
+                    }
                 }
 
-                // Esperamos 100 milisegundos (10 mensajes por segundo)
+                // El bucle principal siempre gira a 10Hz para detectar tus dedos al instante
                 delay(100L)
             }
         }

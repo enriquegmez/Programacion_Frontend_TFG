@@ -175,7 +175,12 @@ class ProtocolStateManager {
                     if (success) {
                         transitionGlobal(AppConstants.GlobalState.SESION_INICIADA)
                         transitionMovement(AppConstants.MovementState.IDLE)
-                    } else transitionGlobal(AppConstants.GlobalState.CONEXION_BACKEND)
+                    } else {
+                        val errorReason = (respMsg.payload as? GenericRespPayload)?.details
+                            ?: "Robot no detectado en la red."
+                        showSystemAlert("Error de conexión: $errorReason")
+                        transitionGlobal(AppConstants.GlobalState.CONEXION_BACKEND)
+                    }
                 }
 
                 AppConstants.Action.DISCONNECT -> {
@@ -183,12 +188,24 @@ class ProtocolStateManager {
                     if (success) {
                         transitionGlobal(AppConstants.GlobalState.CONEXION_BACKEND)
                         transitionMovement(AppConstants.MovementState.IDLE)
-                    } else transitionGlobal(AppConstants.GlobalState.SESION_INICIADA)
+                    } else {
+                        transitionGlobal(AppConstants.GlobalState.SESION_INICIADA)
+                        val errorReason = (respMsg.payload as? GenericRespPayload)?.details
+                            ?: "Error interno del servidor."
+                        showSystemAlert("No se pudo desconectar del robot: $errorReason")
+                    }
                 }
 
                 AppConstants.Action.END -> {
                     if (_globalState.value != AppConstants.GlobalState.ESPERANDO_DESCONEXION_BACKEND) return false
-                    if (success) triggerFullReset() else transitionGlobal(AppConstants.GlobalState.CONEXION_BACKEND)
+                    if (success) {
+                        triggerFullReset()
+                    } else {
+                        transitionGlobal(AppConstants.GlobalState.CONEXION_BACKEND)
+                        val errorReason = (respMsg.payload as? GenericRespPayload)?.details
+                        ?: "El servidor rechazó el cierre."
+                        showSystemAlert("Error al cerrar la sesión: $errorReason")
+                    }
                 }
             }
             return true
@@ -214,8 +231,15 @@ class ProtocolStateManager {
 
                 AppConstants.ControlEvent.STOP -> {
                     if (_movementState.value != AppConstants.MovementState.ESPERANDO_TERMINAR_ENVIO_INFO) return false
-                    if (success) transitionMovement(AppConstants.MovementState.IDLE)
-                    else transitionMovement(AppConstants.MovementState.ENVIANDO_INFO)
+                    if (success) {
+                        transitionMovement(AppConstants.MovementState.IDLE)
+                    }
+                    else {
+                        transitionMovement(AppConstants.MovementState.ENVIANDO_INFO)
+                        val errorReason = (respMsg.payload as? GenericRespPayload)?.details
+                            ?: "El hardware no responde."
+                        showSystemAlert("⚠️ Peligro: No se pudo desactivar el control del joystick: $errorReason")
+                    }
                 }
             }
             return true
@@ -225,6 +249,12 @@ class ProtocolStateManager {
             if (!success) {
                 Log.w(tag, "Error enviando velocidad al backend. Forzando subestado a IDLE.")
                 transitionMovement(AppConstants.MovementState.IDLE)
+
+                // ¡EL NUEVO POPUP!
+                if (respMsg.payload is GenericRespPayload) {
+                    val errorReason = respMsg.payload.details ?: "Conexión inestable."
+                    showSystemAlert("Control interrumpido: $errorReason")
+                }
             }
             return true
         }
