@@ -1,148 +1,193 @@
-package com.enrique.tiago_app.ui.screens
+package com.enrique.tiago_app.ui.screens // Ajusta a tu paquete
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.material3.OutlinedTextField
+import kotlinx.coroutines.launch
 
-// IMPORTS DE TU ARQUITECTURA
+// Tus ViewModels
 import com.enrique.tiago_app.ui.logic.ControlViewModel
 import com.enrique.tiago_app.ui.logic.MainViewModel
+import com.enrique.tiago_app.ui.logic.StreamViewModel // ¡NUEVO! Importamos el StreamViewModel
+import com.enrique.tiago_app.ui.logic.AppScreen // El Enum que añadimos al MainViewModel
 import com.enrique.tiago_app.utils.AppConstants
-import com.enrique.tiago_app.ui.components.JoystickComponent // Importa tu propio Joystick
 
-/**
- * ControlScreen (Pantalla 3 - Teleoperación)
- * La cabina de mando del robot.
- */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ControlScreen(
+    mainViewModel: MainViewModel,
     controlViewModel: ControlViewModel,
-    mainViewModel: MainViewModel // Lo necesitamos para el botón de "Desconectar"
+    streamViewModel: StreamViewModel // ¡NUEVO! Añadimos el ViewModel del vídeo
 ) {
-    // 1. Observamos el estado del semáforo de movimiento
+    // Observamos en qué pantalla estamos
+    val currentScreen by mainViewModel.currentScreen.collectAsState()
+
+    // ¡NUEVO! Estado local para controlar si la pantalla está dividida o no
+    var isSplitScreen by remember { mutableStateOf(false) }
+
+    // Herramientas para el menú lateral
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
+
+    // ¡NUEVO! Observamos si el joystick está mandando datos
     val movState by controlViewModel.movementState.collectAsState()
-    val topicText by controlViewModel.targetTopic.collectAsState()
-
-    // 2. Variables derivadas para simplificar la UI
     val isTeleopActive = (movState == AppConstants.MovementState.ENVIANDO_INFO)
-    val isLoading = movState.startsWith("ESPERANDO_")
 
-    // 3. UI: Contenedor vertical
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.SpaceBetween // Separa los elementos arriba, centro y abajo
-    ) {
+    // ¡CAMBIO! Si salimos de la pantalla de Teleoperación, apagamos la división Y los motores
+    LaunchedEffect(currentScreen) {
+        if (currentScreen != AppScreen.TELEOP) {
+            isSplitScreen = false // Apagamos el switch visual
 
-        // --- BLOQUE SUPERIOR: Estado y Controles ---
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Spacer(modifier = Modifier.height(32.dp))
+            // Si el robot estaba en movimiento, mandamos la señal de STOP
+            if (isTeleopActive) {
+                controlViewModel.toggleTeleop(false)
+            }
+        }
+    }
 
-            Text(
-                text = "Control Manual",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold
-            )
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // 🎯 AQUÍ VA LA CAJA DE TEXTO PARA EL TÓPICO
-            OutlinedTextField(
-                value = topicText,
-                onValueChange = { controlViewModel.onTopicChange(it) },
-                label = { Text("Target Topic (Opcional)") },
-                placeholder = { Text("Ej: /joy_vel o /key_vel") },
-                singleLine = true,
-                // Se bloquea para que no puedan cambiarlo mientras conducen
-                enabled = !isTeleopActive && !isLoading,
-                modifier = Modifier.fillMaxWidth(0.8f)
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Fila con el Switch de Habilitación
-            Row(verticalAlignment = Alignment.CenterVertically) {
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            ModalDrawerSheet(modifier = Modifier.width(300.dp)) {
+                Spacer(Modifier.height(24.dp))
                 Text(
-                    text = if (isTeleopActive) "Motores Armados" else "Motores Bloqueados",
-                    style = MaterialTheme.typography.titleMedium
+                    text = "Panel de Control",
+                    style = MaterialTheme.typography.headlineSmall,
+                    modifier = Modifier.padding(16.dp)
                 )
-                Spacer(modifier = Modifier.width(16.dp))
+                HorizontalDivider()
 
-                if (isLoading) {
-                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                } else {
-                    Switch(
-                        checked = isTeleopActive,
-                        onCheckedChange = { isChecked ->
-                            controlViewModel.toggleTeleop(isChecked)
-                        }
-                    )
+                // Opciones del Menú
+                NavigationDrawerItem(
+                    label = { Text("Dashboard (Inicio)") },
+                    selected = currentScreen == AppScreen.DASHBOARD,
+                    onClick = {
+                        mainViewModel.navigateTo(AppScreen.DASHBOARD)
+                        scope.launch { drawerState.close() }
+                    },
+                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                )
+                NavigationDrawerItem(
+                    label = { Text("Teleoperación") },
+                    selected = currentScreen == AppScreen.TELEOP,
+                    onClick = {
+                        mainViewModel.navigateTo(AppScreen.TELEOP)
+                        scope.launch { drawerState.close() }
+                    },
+                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                )
+                NavigationDrawerItem(
+                    label = { Text("Ver Cámara / Sensores") },
+                    selected = currentScreen == AppScreen.CAMERA,
+                    onClick = {
+                        mainViewModel.navigateTo(AppScreen.CAMERA)
+                        scope.launch { drawerState.close() }
+                    },
+                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                )
+
+                Spacer(Modifier.weight(1f)) // Empuja el botón de desconectar hacia abajo
+
+                // Botón de desconexión general
+                Button(
+                    onClick = { mainViewModel.disconnectFromRobot() },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    Text("Desconectar Robot")
                 }
             }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Texto técnico para ver exactamente qué dice la máquina de estados
-            Text(
-                text = "Estado: $movState",
-                color = when {
-                    isTeleopActive -> Color(0xFF4CAF50) // Verde
-                    isLoading -> Color(0xFFFF9800)      // Naranja
-                    else -> MaterialTheme.colorScheme.onSurfaceVariant // Gris
-                },
-                style = MaterialTheme.typography.bodySmall
-            )
         }
-
-        // --- BLOQUE CENTRAL: El Joystick ---
-        JoystickComponent(
-            size = 250.dp,
-            isEnabled = isTeleopActive,
-            onVelocityChanged = { v, w ->
-                controlViewModel.updateJoystick(v, w)
+    ) {
+        // EL ANDAMIO PRINCIPAL (Lo que se ve cuando el menú está cerrado)
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text(text = "Tiago App") },
+                    navigationIcon = {
+                        IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                            Icon(Icons.Default.Menu, contentDescription = "Abrir Menú")
+                        }
+                    },
+                    // ¡NUEVO! Añadimos el interruptor de Pantalla Dividida arriba a la derecha
+                    actions = {
+                        // Solo mostramos el botón si NO estamos en el Dashboard
+                        if (currentScreen == AppScreen.TELEOP) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "Dividir",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Switch(
+                                    checked = isSplitScreen,
+                                    onCheckedChange = { isSplitScreen = it },
+                                    modifier = Modifier.scale(0.8f) // Lo hacemos un pelín más pequeño
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                            }
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                    )
+                )
             }
-        )
+        ) { innerPadding ->
+            // CONTENIDO VARIABLE SEGÚN EL MENÚ
+            Box(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
+                // ¡NUEVO! Lógica de visualización
+                if (isSplitScreen && currentScreen == AppScreen.TELEOP) {
+                    // MODO PANTALLA DIVIDIDA: Una columna con dos cajas que ocupan el 50% cada una
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        // Mitad superior: Vídeo
+                        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                            StreamView(streamViewModel = streamViewModel, isCompact = true)
+                        }
 
-        // --- BLOQUE INFERIOR: Botón de Salida ---
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Button(
-                onClick = { mainViewModel.disconnectFromRobot() },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.errorContainer,
-                    contentColor = MaterialTheme.colorScheme.onErrorContainer
-                ),
-                modifier = Modifier
-                    .fillMaxWidth(0.8f)
-                    .height(50.dp),
-                enabled = !isLoading // No dejamos que se desconecte a medias de otra cosa
-            ) {
-                Text("Desconectar Robot")
+                        // Una línea divisoria bonita en el medio
+                        HorizontalDivider(
+                            thickness = 3.dp,
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                        )
+
+                        // Mitad inferior: Joystick
+                        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                            JoystickView(controlViewModel = controlViewModel, isCompact = true)
+                        }
+                    }
+                } else {
+                    // MODO PANTALLA COMPLETA (El que teníamos antes)
+                    when (currentScreen) {
+                        AppScreen.DASHBOARD -> {
+                            Column(
+                                modifier = Modifier.fillMaxSize(),
+                                verticalArrangement = Arrangement.Center,
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text("Información del Robot", style = MaterialTheme.typography.headlineSmall)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text("(Próximamente...)", style = MaterialTheme.typography.bodyMedium)
+                            }
+                        }
+                        AppScreen.TELEOP -> {
+                            JoystickView(controlViewModel = controlViewModel)
+                        }
+                        AppScreen.CAMERA -> {
+                            StreamView(streamViewModel = streamViewModel)
+                        }
+                    }
+                }
             }
-            Spacer(modifier = Modifier.height(32.dp))
         }
     }
 }

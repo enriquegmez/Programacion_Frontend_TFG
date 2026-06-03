@@ -6,6 +6,8 @@ import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 
 // Constantes y Modelos
 import com.enrique.tiago_app.utils.AppConstants
@@ -20,6 +22,9 @@ import com.enrique.tiago_app.protocol.ControlData
 import com.enrique.tiago_app.protocol.AsyncNotifyPayload
 import com.enrique.tiago_app.protocol.GenericRespPayload
 import com.enrique.tiago_app.protocol.ProtocolErrorPayload
+import com.enrique.tiago_app.protocol.StreamReqPayload
+import com.enrique.tiago_app.protocol.StopStreamReqPayload
+import com.enrique.tiago_app.protocol.StreamRespPayload
 
 // IMPORTS DE TU CAPA DE COMUNICACIÓN (Asegúrate de que la ruta es correcta)
 import com.enrique.tiago_app.communication.WebSocketClient
@@ -42,6 +47,10 @@ class ProtocolDirector(
 
     // La libreta donde recordamos qué enviamos
     private val pendingRequests = ConcurrentHashMap<Long, RobotMessage>()
+
+    // ¡NUEVO! Canal para emitir la URL del vídeo cuando el servidor nos la dé
+    private val _cameraStreamUrl = MutableSharedFlow<String>()
+    val cameraStreamUrl = _cameraStreamUrl.asSharedFlow()
 
     init {
         // 1. Escuchar los mensajes entrantes (El SharedFlow que hiciste)
@@ -173,6 +182,31 @@ class ProtocolDirector(
             data = ControlData(v = v, w = w, joints = emptyList())
         )
         dispatchMessage(AppConstants.MsgType.CONTROL_REQ, payload)
+    }
+
+    // ==========================================
+    // ¡NUEVO! MÉTODOS DE VÍDEO
+    // ==========================================
+    /**
+     * @param resource "camera", "lidar", "imu", etc.
+     * @param topic El topic de ROS 2 al que suscribirse (ej: "/head_camera/image_raw")
+     * @param quality "low", "medium", "high"
+     */
+    fun sendStartStream(resource: String, topic: String, quality: String) {
+        val payload = StreamReqPayload(
+            resource = resource,
+            topic = topic,
+            qualityLevel = quality
+        )
+        dispatchMessage(AppConstants.MsgType.STREAM_REQ, payload)
+    }
+
+    /**
+     * @param resource "camera", "lidar", "imu", etc.
+     */
+    fun sendStopStream(resource: String) {
+        val payload = StopStreamReqPayload(resource = resource)
+        dispatchMessage(AppConstants.MsgType.STOP_STREAM_REQ, payload)
     }
 
     // ==========================================
@@ -319,6 +353,17 @@ class ProtocolDirector(
 
         if (reqMsg != null) {
             commitAndCheckSync(reqMsg, respMsg)
+
+            // ¡NUEVO! Si era una petición de vídeo y fue un éxito, extraemos la URL mágica
+            if (reqMsg.header.type == AppConstants.MsgType.STREAM_REQ) {
+                val streamResp = respMsg.payload as? StreamRespPayload
+                if (streamResp?.success == true && streamResp.streamUrl != null) {
+                    scope.launch {
+                        // Emitimos la URL por la tubería para que la UI la pinte
+                        _cameraStreamUrl.emit(streamResp.streamUrl)
+                    }
+                }
+            }
 
             // Si el backend nos confirmó el 'END', cortamos el cable físicamente
             if (reqMsg.payload is CommandReqPayload && reqMsg.payload.action == AppConstants.Action.END) {

@@ -9,6 +9,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import com.enrique.tiago_app.logic.ProtocolDirector
 import com.enrique.tiago_app.utils.AppConstants
 
+// ¡NUEVO! Enum para las pantallas del menú lateral
+enum class AppScreen {
+    DASHBOARD,    // La pantalla en blanco por defecto
+    TELEOP,       // Tu joystick
+    CAMERA        // La nueva pantalla de cámara
+}
+
 /**
  * MainViewModel
  * El cerebro de navegación y conexión.
@@ -29,6 +36,11 @@ class MainViewModel(
     // Guardamos el Puerto
     private val _port = MutableStateFlow(AppConstants.DEFAULT_SERVER_PORT.toString())
     val port: StateFlow<String> = _port.asStateFlow()
+
+    // ¡NUEVO! Guardamos la pantalla actual del menú lateral.
+    // Empezará en DASHBOARD (la pantalla en blanco que pediste).
+    private val _currentScreen = MutableStateFlow(AppScreen.DASHBOARD)
+    val currentScreen: StateFlow<AppScreen> = _currentScreen.asStateFlow()
 
     // ==========================================
     // 2. EL PASILLO DEL ESTADO GLOBAL
@@ -56,6 +68,11 @@ class MainViewModel(
         _port.value = newPort
     }
 
+    // ¡NUEVO! Para cuando el usuario haga clic en una opción del menú de las 3 rayitas
+    fun navigateTo(screen: AppScreen) {
+        _currentScreen.value = screen
+    }
+
     // ==========================================
     // 4. ACCIONES DE LOS BOTONES
     // ==========================================
@@ -74,6 +91,8 @@ class MainViewModel(
      * Inicia la sesión lógica con el robot (Manda COMMAND_REQ[connect]).
      */
     fun connectToRobot() {
+        // ¡NUEVO! Cada vez que nos conectamos al robot, forzamos que se abra la pantalla en blanco.
+        _currentScreen.value = AppScreen.DASHBOARD
         director.sendConnectToRobot()
     }
 

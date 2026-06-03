@@ -30,6 +30,13 @@ object AppConstants {
         const val ESPERANDO_TERMINAR_ENVIO_INFO = "ESPERANDO_TERMINAR_ENVIO_INFO"
     }
 
+    object MonitorState {
+        const val IDLE = "IDLE"
+        const val ESPERANDO_RECIBIR_STREAM = "ESPERANDO_RECIBIR_STREAM"
+        const val RECIBIENDO_STREAM = "RECIBIENDO_STREAM"
+        const val ESPERANDO_DEJAR_DE_RECIBIR_STREAM = "ESPERANDO_DEJAR_DE_RECIBIR_STREAM"
+    }
+
     // ==========================================
     // PROTOCOLO: Tipos de Mensaje (Header -> type)
     // ==========================================
@@ -100,10 +107,9 @@ object AppConstants {
         const val INTERNAL_ERROR = 500
     }
 
-    object Robot {
-        const val DEFAULT_CMD_VEL_TOPIC = "cmd_vel"
-        const val MAX_LINEAR_V = 0.5f
-        const val MAX_ANGULAR_W = 1.0f
-        const val JOYSTICK_PUBLISH_INTERVAL_MS = 100L
+    object CameraQuality {
+        const val LOW = "low"
+        const val MEDIUM = "medium"
+        const val HIGH = "high"
     }
 }

@@ -70,8 +70,8 @@ data class ControlReqPayload(
 @Serializable
 data class StreamReqPayload(
     @SerialName("resource") val resource: String,
-    @SerialName("frequency") val frequency: Int,
-    @SerialName("state") val state: String
+    @SerialName("topic") val topic: String? = null,
+    @SerialName("quality_level") val qualityLevel: String? = null
 ): Payload
 
 @Serializable

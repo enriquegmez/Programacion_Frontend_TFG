@@ -30,6 +30,7 @@ import com.enrique.tiago_app.utils.AppConstants
 // --- IMPORTS DE TUS VIEWMODELS ---
 import com.enrique.tiago_app.ui.logic.MainViewModel
 import com.enrique.tiago_app.ui.logic.ControlViewModel
+import com.enrique.tiago_app.ui.logic.StreamViewModel // ¡NUEVO IMPORT!
 
 // --- IMPORTS DE TUS PANTALLAS (SCREENS) ---
 import com.enrique.tiago_app.ui.screens.WebsocketScreen
@@ -92,6 +93,10 @@ fun AppNavigation() {
     val controlViewModel: ControlViewModel = viewModel {
         ControlViewModel(AppDependencies.director)
     }
+    // ¡NUEVO! Instanciamos el cerebro de los sensores
+    val streamViewModel: StreamViewModel = viewModel {
+        StreamViewModel(AppDependencies.director)
+    }
 
     // Observamos el semáforo global para movernos entre pantallas
     val globalState by mainViewModel.globalState.collectAsState()
@@ -152,7 +157,8 @@ fun AppNavigation() {
         composable("control") {
             ControlScreen(
                 controlViewModel = controlViewModel,
-                mainViewModel = mainViewModel
+                mainViewModel = mainViewModel,
+                streamViewModel = streamViewModel
             )
         }
     }

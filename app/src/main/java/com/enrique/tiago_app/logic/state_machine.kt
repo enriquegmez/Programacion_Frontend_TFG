@@ -30,6 +30,10 @@ class ProtocolStateManager {
 
     private val _movementState = MutableStateFlow(AppConstants.MovementState.IDLE)
     val movementState: StateFlow<String> = _movementState.asStateFlow()
+
+    // ¡NUEVO! Estado observable de la cámara
+    private val _monitorState = MutableStateFlow(AppConstants.MonitorState.IDLE)
+    val monitorState: StateFlow<String> = _monitorState.asStateFlow()
     // Estado para avisos emergentes (Alertas al usuario)
     private val _systemAlert = MutableStateFlow<String?>(null)
 
@@ -52,11 +56,9 @@ class ProtocolStateManager {
         // 0. Mensajes de red transversales
         if (type == AppConstants.MsgType.PING_REQ || type == AppConstants.MsgType.ACK) return Pair(true, "")
 
-        // 1. Bloqueo si hay una petición en vuelo
-        if (_globalState.value.startsWith("ESPERANDO_") ||
-            _movementState.value.startsWith("ESPERANDO_")) {
-            return Pair(false, "Bloqueado: Esperando respuesta del servidor.")
-        }
+        // 1. Guardia de Tráfico: Comprueba solo el carril correspondiente
+        val (isBusy, busyReason) = checkSubsystemLock(type)
+        if (isBusy) return Pair(false, busyReason)
 
         // 2. Semáforo según Estado Global y Subestado
         when (_globalState.value) {
@@ -98,6 +100,21 @@ class ProtocolStateManager {
                         else -> return Pair(false, "Estado de movimiento no válido para envío.")
                     }
                 }
+
+                // Submáquina de Monitorización
+                if (type == AppConstants.MsgType.STREAM_REQ || type == AppConstants.MsgType.STOP_STREAM_REQ) {
+                    when (_monitorState.value) {
+                        AppConstants.MonitorState.IDLE -> {
+                            if (type == AppConstants.MsgType.STREAM_REQ) return Pair(true, "")
+                            return Pair(false, "Comando denegado. El estado actual es IDLE (No hay stream que detener).")
+                        }
+                        AppConstants.MonitorState.RECIBIENDO_STREAM -> {
+                            if (type == AppConstants.MsgType.STOP_STREAM_REQ) return Pair(true, "")
+                            return Pair(false, "Comando denegado. El estado actual es RECIBIENDO_STREAM.")
+                        }
+                        else -> return Pair(false, "Estado de monitorización no válido para envío.")
+                    }
+                }
             }
         }
         return Pair(false, "Mensaje '$type' no soportado en el estado ${_globalState.value}.")
@@ -126,6 +143,12 @@ class ProtocolStateManager {
                 AppConstants.ControlEvent.START -> transitionMovement(AppConstants.MovementState.ESPERANDO_PERMISO_ENVIO_INFO)
                 AppConstants.ControlEvent.STOP -> transitionMovement(AppConstants.MovementState.ESPERANDO_TERMINAR_ENVIO_INFO)
             }
+        }
+        // ¡NUEVO! Peticiones de cámara
+        else if (type == AppConstants.MsgType.STREAM_REQ) {
+            transitionMonitor(AppConstants.MonitorState.ESPERANDO_RECIBIR_STREAM)
+        } else if (type == AppConstants.MsgType.STOP_STREAM_REQ) {
+            transitionMonitor(AppConstants.MonitorState.ESPERANDO_DEJAR_DE_RECIBIR_STREAM)
         }
     }
 
@@ -169,15 +192,16 @@ class ProtocolStateManager {
         // 3. Lógica según lo que habíamos pedido
         if (reqMsg.payload is CommandReqPayload) {
             val action = reqMsg.payload.action
+            val isCorrectPayload = respMsg.payload is GenericRespPayload // ¡ESCUDO!
             when (action) {
                 AppConstants.Action.CONNECT -> {
                     if (_globalState.value != AppConstants.GlobalState.ESPERANDO_INICIO_SESION) return false
-                    if (success) {
+                    if (success && isCorrectPayload) {
                         transitionGlobal(AppConstants.GlobalState.SESION_INICIADA)
                         transitionMovement(AppConstants.MovementState.IDLE)
                     } else {
-                        val errorReason = (respMsg.payload as? GenericRespPayload)?.details
-                            ?: "Robot no detectado en la red."
+                        val errorReason = if (!isCorrectPayload) "Respuesta del servidor con formato incorrecto."
+                        else (respMsg.payload as? GenericRespPayload)?.details ?: "Robot no detectado en la red."
                         showSystemAlert("Error de conexión: $errorReason")
                         transitionGlobal(AppConstants.GlobalState.CONEXION_BACKEND)
                     }
@@ -185,25 +209,25 @@ class ProtocolStateManager {
 
                 AppConstants.Action.DISCONNECT -> {
                     if (_globalState.value != AppConstants.GlobalState.ESPERANDO_CIERRE_SESION) return false
-                    if (success) {
+                    if (success && isCorrectPayload) {
                         transitionGlobal(AppConstants.GlobalState.CONEXION_BACKEND)
                         transitionMovement(AppConstants.MovementState.IDLE)
                     } else {
                         transitionGlobal(AppConstants.GlobalState.SESION_INICIADA)
-                        val errorReason = (respMsg.payload as? GenericRespPayload)?.details
-                            ?: "Error interno del servidor."
+                        val errorReason = if (!isCorrectPayload) "Respuesta del servidor con formato incorrecto."
+                        else (respMsg.payload as? GenericRespPayload)?.details ?: "Error interno del servidor."
                         showSystemAlert("No se pudo desconectar del robot: $errorReason")
                     }
                 }
 
                 AppConstants.Action.END -> {
                     if (_globalState.value != AppConstants.GlobalState.ESPERANDO_DESCONEXION_BACKEND) return false
-                    if (success) {
+                    if (success && isCorrectPayload) {
                         triggerFullReset()
                     } else {
                         transitionGlobal(AppConstants.GlobalState.CONEXION_BACKEND)
-                        val errorReason = (respMsg.payload as? GenericRespPayload)?.details
-                        ?: "El servidor rechazó el cierre."
+                        val errorReason = if (!isCorrectPayload) "Respuesta del servidor con formato incorrecto."
+                        else (respMsg.payload as? GenericRespPayload)?.details ?: "El servidor rechazó el cierre."
                         showSystemAlert("Error al cerrar la sesión: $errorReason")
                     }
                 }
@@ -212,32 +236,33 @@ class ProtocolStateManager {
         }
         else if (reqMsg.payload is ControlModeReqPayload) {
             val event = reqMsg.payload.event
+            val isCorrectPayload = respMsg.payload is GenericRespPayload // ¡ESCUDO!
             when (event) {
                 AppConstants.ControlEvent.START -> {
                     if (_movementState.value != AppConstants.MovementState.ESPERANDO_PERMISO_ENVIO_INFO) return false
-                    if (success) {
+                    if (success && isCorrectPayload) {
                         transitionMovement(AppConstants.MovementState.ENVIANDO_INFO)
                     }
                     else {
                         transitionMovement(AppConstants.MovementState.IDLE)
                         // 2. Extraemos el mensaje de error de Python (o ponemos uno por defecto)
-                        if (respMsg.payload is GenericRespPayload) {
-                            val errorReason = respMsg.payload.details ?: "El topic introducido no es válido."
+                            val errorReason = if (!isCorrectPayload) "Formato incorrecto."
+                            else (respMsg.payload as? GenericRespPayload)?.details ?: "El topic introducido no es válido."
                             // 3. Mostramos el Popup
                             showSystemAlert("No se pudo iniciar el control: $errorReason")
-                        }
+
                     }
                 }
 
                 AppConstants.ControlEvent.STOP -> {
                     if (_movementState.value != AppConstants.MovementState.ESPERANDO_TERMINAR_ENVIO_INFO) return false
-                    if (success) {
+                    if (success && isCorrectPayload) {
                         transitionMovement(AppConstants.MovementState.IDLE)
                     }
                     else {
                         transitionMovement(AppConstants.MovementState.ENVIANDO_INFO)
-                        val errorReason = (respMsg.payload as? GenericRespPayload)?.details
-                            ?: "El hardware no responde."
+                        val errorReason = if (!isCorrectPayload) "Formato incorrecto."
+                        else (respMsg.payload as? GenericRespPayload)?.details ?: "El hardware no responde."
                         showSystemAlert("⚠️ Peligro: No se pudo desactivar el control del joystick: $errorReason")
                     }
                 }
@@ -246,15 +271,55 @@ class ProtocolStateManager {
         }
         else if (reqMsg.header.type == AppConstants.MsgType.CONTROL_REQ) {
             if (_movementState.value != AppConstants.MovementState.ENVIANDO_INFO) return false
-            if (!success) {
+            val isCorrectPayload = respMsg.payload is GenericRespPayload
+            if (!success || !isCorrectPayload) {
                 Log.w(tag, "Error enviando velocidad al backend. Forzando subestado a IDLE.")
                 transitionMovement(AppConstants.MovementState.IDLE)
 
                 // ¡EL NUEVO POPUP!
-                if (respMsg.payload is GenericRespPayload) {
-                    val errorReason = respMsg.payload.details ?: "Conexión inestable."
+                val errorReason = if (!isCorrectPayload) "Formato incorrecto."
+                else (respMsg.payload as? GenericRespPayload)?.details ?: "Conexión inestable."
                     showSystemAlert("Control interrumpido: $errorReason")
+            }
+            return true
+        }
+
+        // ==========================================
+        // ¡NUEVO! Respuestas de Vídeo
+        // ==========================================
+        else if (reqMsg.header.type == AppConstants.MsgType.STREAM_REQ) {
+            if (_monitorState.value != AppConstants.MonitorState.ESPERANDO_RECIBIR_STREAM) return false
+            // 1. Comprobamos que el payload es del tipo correcto
+            val streamPayload = respMsg.payload as? StreamRespPayload
+            val isCorrectPayload = streamPayload != null
+
+            // 2. ¡NUEVO! Si dicen que hay éxito, exigimos que la URL no sea nula
+            val hasValidUrl = streamPayload?.streamUrl != null
+            if (success && isCorrectPayload && hasValidUrl) {
+                transitionMonitor(AppConstants.MonitorState.RECIBIENDO_STREAM)
+            } else {
+                transitionMonitor(AppConstants.MonitorState.IDLE)
+                val errorReason = if (!isCorrectPayload) {
+                    "El servidor respondió con un formato incorrecto."
+                } else if (success) {
+                    "El servidor indicó éxito pero no proporcionó ninguna URL."
+                } else {
+                    streamPayload.details ?: "Error desconocido al contactar con la cámara."
                 }
+                showSystemAlert("Error de vídeo: $errorReason")
+            }
+            return true
+        }
+        else if (reqMsg.header.type == AppConstants.MsgType.STOP_STREAM_REQ) {
+            if (_monitorState.value != AppConstants.MonitorState.ESPERANDO_DEJAR_DE_RECIBIR_STREAM) return false
+            val isCorrectPayload = respMsg.payload is GenericRespPayload // ¡ESCUDO!
+            if (success && isCorrectPayload) {
+                transitionMonitor(AppConstants.MonitorState.IDLE)
+            } else {
+                transitionMonitor(AppConstants.MonitorState.RECIBIENDO_STREAM)
+                val errorReason = if (!isCorrectPayload) "Formato incorrecto."
+                else (respMsg.payload as? GenericRespPayload)?.details ?: "Error interno."
+                showSystemAlert("No se pudo detener el vídeo: $errorReason")
             }
             return true
         }
@@ -271,6 +336,7 @@ class ProtocolStateManager {
         Log.i(tag, "Línea caída o error de sesión. Volviendo a CONEXION_BACKEND.")
         transitionGlobal(AppConstants.GlobalState.CONEXION_BACKEND)
         transitionMovement(AppConstants.MovementState.IDLE)
+        transitionMonitor(AppConstants.MonitorState.IDLE)
     }
 
     // Llamado si se corta el WebSocket o hacemos 'END'
@@ -278,6 +344,7 @@ class ProtocolStateManager {
         Log.i(tag, "Cierre completo. Volviendo a DESCONECTADO (Pantalla Inicial).")
         transitionGlobal(AppConstants.GlobalState.IDLE)
         transitionMovement(AppConstants.MovementState.IDLE)
+        transitionMonitor(AppConstants.MonitorState.IDLE)
     }
 
     // ==========================================
@@ -294,6 +361,35 @@ class ProtocolStateManager {
         if (_movementState.value != newState) {
             Log.d(tag, "UI Movement State: ${_movementState.value} -> $newState")
             _movementState.value = newState
+        }
+    }
+
+    private fun transitionMonitor(newState: String) {
+        if (_monitorState.value != newState) {
+            Log.d(tag, "UI Monitor State: ${_monitorState.value} -> $newState")
+            _monitorState.value = newState
+        }
+    }
+
+    /**
+     * Guardia de Tráfico: Asocia cada tipo de mensaje a su submáquina correspondiente
+     * y comprueba si ese subsistema está ocupado ("ESPERANDO_...").
+     */
+    private fun checkSubsystemLock(msgType: String): Pair<Boolean, String> {
+        return when (msgType) {
+            // Carril Global
+            AppConstants.MsgType.COMMAND_REQ, AppConstants.MsgType.QUERY_REQ -> {
+                if (_globalState.value.startsWith("ESPERANDO_")) Pair(true, "Bloqueado: Servidor procesando sesión.") else Pair(false, "")
+            }
+            // Carril de Movimiento
+            AppConstants.MsgType.CONTROL_MODE_REQ, AppConstants.MsgType.CONTROL_REQ -> {
+                if (_movementState.value.startsWith("ESPERANDO_")) Pair(true, "Bloqueado: Petición de movimiento en curso.") else Pair(false, "")
+            }
+            // Carril de Vídeo
+            AppConstants.MsgType.STREAM_REQ, AppConstants.MsgType.STOP_STREAM_REQ -> {
+                if (_monitorState.value.startsWith("ESPERANDO_")) Pair(true, "Bloqueado: Petición de cámara en curso.") else Pair(false, "")
+            }
+            else -> Pair(false, "")
         }
     }
 }
