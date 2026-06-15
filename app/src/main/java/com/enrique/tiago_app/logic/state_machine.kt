@@ -279,7 +279,7 @@ class ProtocolStateManager {
                 // ¡EL NUEVO POPUP!
                 val errorReason = if (!isCorrectPayload) "Formato incorrecto."
                 else (respMsg.payload as? GenericRespPayload)?.details ?: "Conexión inestable."
-                    showSystemAlert("Control interrumpido: $errorReason")
+                showSystemAlert("Control interrumpido: $errorReason")
             }
             return true
         }

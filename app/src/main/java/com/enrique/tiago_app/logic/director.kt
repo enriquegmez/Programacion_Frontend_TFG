@@ -322,12 +322,25 @@ class ProtocolDirector(
             }
             // 🚨 NUEVA LÓGICA: Error 2 Solucionado
             else if (respMsg.payload.type== AppConstants.AsyncNotify.TYPE_EMERGENCY_STOP) {
-                Log.e(tag, "¡NOTIFICACIÓN DE EMERGENCIA! El robot se ha desconectado del servidor.")
+                Log.e(tag, "¡NOTIFICACIÓN DE EMERGENCIA! Motivo: ${respMsg.payload.details}")
 
-                // 1. Informamos al usuario con un popup
-                stateManager.showSystemAlert("⚠️ Se ha perdido la conexión con el robot Tiago. Operación abortada.")
+                // 1. Leemos los detalles que nos manda Python y elegimos el mensaje adecuado
+                val alertMessage = when (respMsg.payload.details) {
+                    "MULTIPLE_ROBOTS_DETECTED" -> {
+                        "⚠️ ALERTA DE SEGURIDAD\n\nSe han detectado múltiples robots (o simuladores) en la misma red Wi-Fi. Por seguridad para evitar accidentes cruzados, la teleoperación ha sido abortada."
+                    }
+                    "ROBOT_CONNECTION_LOST" -> {
+                        "⚠️ CONEXIÓN PERDIDA\n\nSe ha perdido la comunicación con los nodos del robot Tiago. Operación abortada."
+                    }
+                    else -> {
+                        "⚠️ PARADA DE EMERGENCIA\n\nEl servidor ha abortado la conexión por seguridad."
+                    }
+                }
 
-                // 2. Reseteamos la máquina de estados local para volver al Menú
+                // 2. Informamos al usuario con el popup dinámico
+                stateManager.showSystemAlert(alertMessage)
+
+                // 3. Reseteamos la máquina de estados local para volver al Menú / Login
                 stateManager.triggerSessionReset()
             }
             return
