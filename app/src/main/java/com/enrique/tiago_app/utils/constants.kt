@@ -7,7 +7,7 @@ package com.enrique.tiago_app.utils
  */
 object AppConstants {
 
-    const val DEFAULT_SERVER_IP = "192.168.1.136"
+    const val DEFAULT_SERVER_IP = "192.168.68.79"
     const val DEFAULT_SERVER_PORT = 8765
 
     // ==========================================
@@ -21,6 +21,8 @@ object AppConstants {
         const val SESION_INICIADA = "SESION_INICIADA"
         const val ESPERANDO_CIERRE_SESION = "ESPERANDO_CIERRE_SESION"
         const val ESPERANDO_DESCONEXION_BACKEND = "ESPERANDO_DESCONEXION_BACKEND"
+
+        const val ESPERANDO_RECIBIR_INFORMACION_UNICA = "ESPERANDO_RECIBIR_INFORMACION_UNICA"
     }
 
     object MovementState {

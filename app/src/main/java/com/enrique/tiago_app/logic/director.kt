@@ -8,6 +8,9 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 // Constantes y Modelos
 import com.enrique.tiago_app.utils.AppConstants
@@ -25,11 +28,16 @@ import com.enrique.tiago_app.protocol.ProtocolErrorPayload
 import com.enrique.tiago_app.protocol.StreamReqPayload
 import com.enrique.tiago_app.protocol.StopStreamReqPayload
 import com.enrique.tiago_app.protocol.StreamRespPayload
+import com.enrique.tiago_app.protocol.QueryReqPayload
+import com.enrique.tiago_app.protocol.QueryRespPayload
 
 // IMPORTS DE TU CAPA DE COMUNICACIÓN (Asegúrate de que la ruta es correcta)
 import com.enrique.tiago_app.communication.WebSocketClient
 import com.enrique.tiago_app.communication.SessionManager
 import com.enrique.tiago_app.protocol.MessageCodec
+import com.enrique.tiago_app.protocol.RobotCapabilitiesData
+
+
 
 /**
  * ProtocolDirector
@@ -51,6 +59,10 @@ class ProtocolDirector(
     // ¡NUEVO! Canal para emitir la URL del vídeo cuando el servidor nos la dé
     private val _cameraStreamUrl = MutableSharedFlow<String>()
     val cameraStreamUrl = _cameraStreamUrl.asSharedFlow()
+
+    // ¡NUEVO! Estado observable de la radiografía del robot
+    private val _robotCapabilities = MutableStateFlow<RobotCapabilitiesData?>(null)
+    val robotCapabilities: StateFlow<RobotCapabilitiesData?> = _robotCapabilities.asStateFlow()
 
     init {
         // 1. Escuchar los mensajes entrantes (El SharedFlow que hiciste)
@@ -159,6 +171,19 @@ class ProtocolDirector(
     fun sendEndProtocol() {
         val payload = CommandReqPayload(action = AppConstants.Action.END)
         dispatchMessage(AppConstants.MsgType.COMMAND_REQ, payload)
+    }
+
+    // ¡NUEVO! Solicita la radiografía completa del robot
+    fun sendRequestRobotInfo() {
+        val payload = QueryReqPayload(
+            resourceType = "ROBOT_INFO"
+        )
+        dispatchMessage(AppConstants.MsgType.QUERY_REQ, payload)
+    }
+
+    // ¡NUEVO! Limpia la memoria del robot cuando nos desconectamos
+    fun clearRobotCapabilities() {
+        _robotCapabilities.value = null
     }
 
     fun sendStartMovement(customTopic: String) {
@@ -375,6 +400,15 @@ class ProtocolDirector(
                         // Emitimos la URL por la tubería para que la UI la pinte
                         _cameraStreamUrl.emit(streamResp.streamUrl)
                     }
+                }
+            }
+
+            // ¡NUEVO! Si era una petición de información del robot y fue un éxito
+            if (reqMsg.header.type == AppConstants.MsgType.QUERY_REQ) {
+                val queryResp = respMsg.payload as? QueryRespPayload
+                if (queryResp?.success == true && queryResp.data != null) {
+                    // Guardamos la radiografía en el estado observable para que la UI se pinte sola
+                    _robotCapabilities.value = queryResp.data
                 }
             }
 

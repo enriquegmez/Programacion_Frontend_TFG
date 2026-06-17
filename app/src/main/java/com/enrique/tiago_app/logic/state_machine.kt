@@ -14,6 +14,7 @@ import com.enrique.tiago_app.protocol.GenericRespPayload
 import com.enrique.tiago_app.protocol.QueryRespPayload
 import com.enrique.tiago_app.protocol.ActionFeedbackPayload
 import com.enrique.tiago_app.protocol.StreamRespPayload
+import com.enrique.tiago_app.protocol.QueryReqPayload
 
 /**
  * ProtocolStateManager
@@ -81,6 +82,11 @@ class ProtocolStateManager {
                     return Pair(false, "Acción '${msg.payload.action}' denegada en SESION_INICIADA.")
                 }
 
+                // ¡NUEVO! Permitimos enviar consultas (QueryReq) si la sesión está iniciada
+                if (type == AppConstants.MsgType.QUERY_REQ) {
+                    return Pair(true, "")
+                }
+
                 // Submáquina de Movimiento
                 if (type == AppConstants.MsgType.CONTROL_MODE_REQ || type == AppConstants.MsgType.CONTROL_REQ) {
                     when (_movementState.value) {
@@ -138,6 +144,8 @@ class ProtocolStateManager {
                 AppConstants.Action.DISCONNECT -> transitionGlobal(AppConstants.GlobalState.ESPERANDO_CIERRE_SESION)
                 AppConstants.Action.END -> transitionGlobal(AppConstants.GlobalState.ESPERANDO_DESCONEXION_BACKEND)
             }
+        } else if (type == AppConstants.MsgType.QUERY_REQ) {
+            transitionGlobal(AppConstants.GlobalState.ESPERANDO_RECIBIR_INFORMACION_UNICA)
         } else if (reqMsg.payload is ControlModeReqPayload) {
             when (reqMsg.payload.event) {
                 AppConstants.ControlEvent.START -> transitionMovement(AppConstants.MovementState.ESPERANDO_PERMISO_ENVIO_INFO)
@@ -152,9 +160,6 @@ class ProtocolStateManager {
         }
     }
 
-    // ==========================================
-    // 3. COMMIT AL RECIBIR (Resuelve el 'Cargando...')
-    // ==========================================
     // ==========================================
     // 3. COMMIT AL RECIBIR (Resuelve el 'Cargando...')
     // ==========================================
@@ -234,6 +239,27 @@ class ProtocolStateManager {
             }
             return true
         }
+
+        // ==========================================
+        // ¡NUEVO! Respuestas de Información (QueryResp)
+        // ==========================================
+        else if (reqMsg.payload is QueryReqPayload) {
+            if (_globalState.value != AppConstants.GlobalState.ESPERANDO_RECIBIR_INFORMACION_UNICA) return false
+
+            val isCorrectPayload = respMsg.payload is QueryRespPayload
+
+            // Requisito cumplido: Siempre volvemos a SESION_INICIADA
+            transitionGlobal(AppConstants.GlobalState.SESION_INICIADA)
+
+            // Si hubo un error en la obtención de datos, avisamos al usuario
+            if (!success || !isCorrectPayload) {
+                val errorReason = if (!isCorrectPayload) "Respuesta del servidor con formato incorrecto."
+                else (respMsg.payload as? QueryRespPayload)?.details ?: "Error desconocido al obtener información."
+                showSystemAlert("Aviso de escaneo: $errorReason")
+            }
+            return true
+        }
+
         else if (reqMsg.payload is ControlModeReqPayload) {
             val event = reqMsg.payload.event
             val isCorrectPayload = respMsg.payload is GenericRespPayload // ¡ESCUDO!

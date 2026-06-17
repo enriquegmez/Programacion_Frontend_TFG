@@ -4,10 +4,13 @@ import androidx.lifecycle.ViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import androidx.lifecycle.viewModelScope // ¡NUEVO! Para lanzar corrutinas en el ViewModel
+import kotlinx.coroutines.launch // ¡NUEVO!
 
 // Importamos el Director y las Constantes
 import com.enrique.tiago_app.logic.ProtocolDirector
 import com.enrique.tiago_app.utils.AppConstants
+import com.enrique.tiago_app.protocol.RobotCapabilitiesData // ¡NUEVO! El modelo de datos
 
 // ¡NUEVO! Enum para las pantallas del menú lateral
 enum class AppScreen {
@@ -24,6 +27,26 @@ enum class AppScreen {
 class MainViewModel(
     private val director: ProtocolDirector
 ) : ViewModel() {
+
+    init {
+        // ¡LA MAGIA DE LA AUTOMATIZACIÓN CORREGIDA!
+        viewModelScope.launch {
+            director.stateManager.globalState.collect { state ->
+
+                if (state == AppConstants.GlobalState.SESION_INICIADA) {
+                    // ¡SOLUCIÓN AL BUCLE! Solo pedimos los datos si es la primera vez (están en null)
+                    if (robotCapabilities.value == null) {
+                        director.sendRequestRobotInfo()
+                    }
+                }
+                // Si volvemos a la pantalla de inicio o se corta la conexión, borramos los datos
+                else if (state == AppConstants.GlobalState.IDLE || state == AppConstants.GlobalState.CONEXION_BACKEND) {
+                    director.clearRobotCapabilities()
+                }
+
+            }
+        }
+    }
 
     // ==========================================
     // 1. ESTADO DE LA INTERFAZ (Textos)
@@ -51,6 +74,10 @@ class MainViewModel(
 
     // ¡NUEVO! Observamos las alertas del sistema (Desconexiones de emergencia)
     val systemAlert: StateFlow<String?> = director.stateManager.systemAlert
+
+    // ¡NUEVO! Pasillo directo hacia la radiografía del robot.
+    // Jetpack Compose leerá esto para pintar los menús o deshabilitar botones.
+    val robotCapabilities: StateFlow<RobotCapabilitiesData?> = director.robotCapabilities
 
     fun clearAlert() {
         director.stateManager.clearSystemAlert()

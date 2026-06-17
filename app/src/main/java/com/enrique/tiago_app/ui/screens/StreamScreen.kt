@@ -15,13 +15,14 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.enrique.tiago_app.ui.logic.StreamViewModel
 import com.enrique.tiago_app.utils.AppConstants
 
-@OptIn(ExperimentalMaterial3Api::class) // Necesario para los DropdownMenu de Material 3
+@OptIn(ExperimentalMaterial3Api::class)
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-fun StreamView(streamViewModel: StreamViewModel,
-               isCompact: Boolean = false // ¡NUEVO!)
+fun StreamView(
+    streamViewModel: StreamViewModel,
+    cameraTopics: List<String>, // ¡NUEVO! Recibimos la lista de cámaras detectadas
+    isCompact: Boolean = false
 ) {
-
     // 1. Observamos los estados
     val monitorState by streamViewModel.monitorState.collectAsState()
     val streamUrl by streamViewModel.streamUrl.collectAsState()
@@ -36,22 +37,28 @@ fun StreamView(streamViewModel: StreamViewModel,
 
     // 3. Variables para controlar si los menús están abiertos o cerrados
     var resourceMenuExpanded by remember { mutableStateOf(false) }
+    var topicMenuExpanded by remember { mutableStateOf(false) } // ¡NUEVO! Para el topic
     var qualityMenuExpanded by remember { mutableStateOf(false) }
 
     // Opciones de los menús
-    val resourceOptions = listOf("camera") // En el futuro puedes añadir "lidar", "imu", etc.
-
-    // Mapeamos lo que lee el usuario con lo que necesita tu Constants interno
+    val resourceOptions = listOf("camera")
     val qualityOptions = mapOf(
         "Alta" to AppConstants.CameraQuality.HIGH,
         "Media" to AppConstants.CameraQuality.MEDIUM,
         "Baja" to AppConstants.CameraQuality.LOW
     )
 
+    // ¡MAGIA! Auto-selección de la cámara principal por defecto
+    LaunchedEffect(cameraTopics) {
+        if (currentTopic.isBlank() && cameraTopics.isNotEmpty()) {
+            streamViewModel.updateTopic(cameraTopics.first())
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(if (isCompact) 4.dp else 16.dp), // Menos margen
+            .padding(if (isCompact) 4.dp else 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         if (!isStreaming) {
@@ -72,7 +79,7 @@ fun StreamView(streamViewModel: StreamViewModel,
                 OutlinedTextField(
                     value = currentResource,
                     onValueChange = {},
-                    readOnly = true, // El usuario no puede escribir, solo seleccionar
+                    readOnly = true,
                     label = { Text("Recurso a visualizar") },
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = resourceMenuExpanded) },
                     colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
@@ -93,26 +100,49 @@ fun StreamView(streamViewModel: StreamViewModel,
                     }
                 }
             }
-            // ¡MEJORA! Espacio minúsculo si es compacto
+
             Spacer(modifier = Modifier.height(if (isCompact) 4.dp else 12.dp))
 
-            // --- TEXTO LIBRE: TOPIC ---
-            OutlinedTextField(
-                value = currentTopic,
-                onValueChange = { streamViewModel.updateTopic(it) },
-                label = { Text("Topic de ROS 2") },
-                placeholder = { Text("Ej: /head_front_camera/rgb/image_raw") },
-                enabled = !isLoading,
-                modifier = Modifier.fillMaxWidth()
-            )
-            Spacer(modifier = Modifier.height(12.dp))
+            // --- ¡NUEVO! DESPLEGABLE: TOPIC DE LA CÁMARA ---
+            ExposedDropdownMenuBox(
+                expanded = topicMenuExpanded,
+                onExpandedChange = {
+                    if (!isLoading && cameraTopics.isNotEmpty()) topicMenuExpanded = it
+                }
+            ) {
+                OutlinedTextField(
+                    value = if (cameraTopics.isEmpty()) "Ninguna cámara detectada" else currentTopic,
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Topic de ROS 2") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = topicMenuExpanded) },
+                    colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
+                    enabled = !isLoading,
+                    modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth()
+                )
+                ExposedDropdownMenu(
+                    expanded = topicMenuExpanded,
+                    onDismissRequest = { topicMenuExpanded = false }
+                ) {
+                    cameraTopics.forEach { topic ->
+                        DropdownMenuItem(
+                            text = { Text(topic) },
+                            onClick = {
+                                streamViewModel.updateTopic(topic)
+                                topicMenuExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(if (isCompact) 4.dp else 12.dp))
 
             // --- DESPLEGABLE: CALIDAD ---
             ExposedDropdownMenuBox(
                 expanded = qualityMenuExpanded,
                 onExpandedChange = { if (!isLoading) qualityMenuExpanded = it }
             ) {
-                // Buscamos qué texto mostrar dependiendo del valor guardado en el ViewModel
                 val qualityTextUI = qualityOptions.entries.find { it.value == currentQuality }?.key ?: "Media"
 
                 OutlinedTextField(
@@ -139,22 +169,19 @@ fun StreamView(streamViewModel: StreamViewModel,
                     }
                 }
             }
-            // ¡MEJORA! Ahorramos mucho espacio antes del botón
+
             Spacer(modifier = Modifier.height(if (isCompact) 8.dp else 32.dp))
 
             // --- BOTÓN INICIAR Y VALIDACIÓN ---
             Button(
                 onClick = {
-                    // 1. VALIDACIÓN LOCAL: Comprobamos que no haya borrado el topic
                     if (currentResource.isBlank() || currentTopic.isBlank() || currentQuality.isBlank()) {
-                        streamViewModel.showValidationError("Por favor, rellena todos los campos antes de ver el sensor.")
+                        streamViewModel.showValidationError("Por favor, selecciona una cámara válida antes de iniciar.")
                     } else {
-                        // 2. Si todo está bien, mandamos la orden al servidor
                         streamViewModel.toggleStream()
                     }
                 },
-                enabled = !isLoading,
-                // ¡MEJORA! Botón un pelín más fino en modo compacto
+                enabled = !isLoading && cameraTopics.isNotEmpty(), // ¡Seguridad extra! No deja pulsar si no hay cámara
                 modifier = Modifier.fillMaxWidth().height(if (isCompact) 45.dp else 50.dp)
             ) {
                 if (isLoading) {
@@ -171,7 +198,6 @@ fun StreamView(streamViewModel: StreamViewModel,
             // ==========================================
             // MODO VISUALIZACIÓN (Sensor Encendido)
             // ==========================================
-            // ¡NUEVO! Ocultamos el título si estamos en pantalla dividida para ahorrar espacio
             if (!isCompact) {
                 Text(
                     text = "Visualizando: $currentResource",
@@ -197,7 +223,7 @@ fun StreamView(streamViewModel: StreamViewModel,
                             }
                         },
                         modifier = Modifier.fillMaxSize(),
-                        onRelease = { webView -> webView.destroy() } // <-- Esto libera toda la RAM
+                        onRelease = { webView -> webView.destroy() }
                     )
                 } else {
                     Text("Error: URL no disponible", modifier = Modifier.align(Alignment.Center))
@@ -209,7 +235,7 @@ fun StreamView(streamViewModel: StreamViewModel,
             Button(
                 onClick = { streamViewModel.toggleStream() },
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                modifier = Modifier.fillMaxWidth().height(if (isCompact) 40.dp else 50.dp) // Botón más fino
+                modifier = Modifier.fillMaxWidth().height(if (isCompact) 40.dp else 50.dp)
             ) {
                 if (isLoading) {
                     CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.onError)

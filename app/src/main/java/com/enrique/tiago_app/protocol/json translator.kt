@@ -102,8 +102,8 @@ class MessageCodec {
         }
 
         val finalJsonString = jsonFormat.encodeToString(finalJsonObj)
-            if (finalHeader.type != AppConstants.MsgType.PING_REQ && finalHeader.type != AppConstants.MsgType.CONTROL_REQ)
-                Log.d(tag, "Codificado (OUT): $finalJsonString")
+        if (finalHeader.type != AppConstants.MsgType.PING_REQ && finalHeader.type != AppConstants.MsgType.CONTROL_REQ)
+            Log.d(tag, "Codificado (OUT): $finalJsonString")
         return finalJsonString
     }
 

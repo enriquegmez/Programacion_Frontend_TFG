@@ -108,7 +108,8 @@ data class QueryRespPayload(
     @SerialName("resp_type") val respType: String,
     @SerialName("details") val details: String? = null,
     @SerialName("resp_data") val respData: JsonObject? = null,
-    @SerialName("data") val data: List<String>? = null
+    // ¡MODIFICADO! Ahora mapea directamente la radiografía completa del robot
+    @SerialName("data") val data: RobotCapabilitiesData? = null
 ): Payload
 
 @Serializable
@@ -142,3 +143,47 @@ data class GenericRespPayload(
     @SerialName("details") val details: String? = null,
     @SerialName("resp_data") val respData: JsonObject? = null
 ): Payload
+
+
+// ==========================================
+// MODELOS PARA LA RADIOGRAFÍA DEL ROBOT (QueryResp -> ROBOT_INFO)
+// ==========================================
+
+@Serializable
+data class RobotCapabilitiesData(
+    @SerialName("identity") val identity: IdentityData? = null,
+    @SerialName("status") val status: StatusData? = null,
+    @SerialName("capabilities") val capabilities: CapabilitiesData? = null
+)
+
+@Serializable
+data class IdentityData(
+    @SerialName("hostname") val hostname: String,
+    @SerialName("domain_id") val domainId: String
+)
+
+@Serializable
+data class StatusData(
+    @SerialName("battery_pct") val batteryPct: Double,
+    @SerialName("e_stop_active") val eStopActive: Boolean
+)
+
+@Serializable
+data class CapabilitiesData(
+    @SerialName("has_base") val hasBase: Boolean,
+    @SerialName("cameras") val cameras: List<CameraDevice> = emptyList(),
+    @SerialName("teleop_topics") val teleopTopics: List<String> = emptyList(),
+    @SerialName("camera_topics") val cameraTopics: List<String> = emptyList(),
+    @SerialName("has_manipulator") val hasManipulator: Boolean,
+    @SerialName("has_gripper") val hasGripper: Boolean,
+    @SerialName("has_imu") val hasImu: Boolean,
+    @SerialName("has_odometry") val hasOdom: Boolean,
+    @SerialName("has_lidar") val hasLidar: Boolean,
+    @SerialName("has_nav") val hasNav: Boolean,
+    @SerialName("has_moveit") val hasMoveit: Boolean
+)
+
+@Serializable
+data class CameraDevice(
+    @SerialName("name") val name: String
+)

@@ -1,21 +1,30 @@
 package com.enrique.tiago_app.ui.screens // Ajusta a tu paquete
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.BatteryFull
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
 // Tus ViewModels
 import com.enrique.tiago_app.ui.logic.ControlViewModel
 import com.enrique.tiago_app.ui.logic.MainViewModel
-import com.enrique.tiago_app.ui.logic.StreamViewModel // ¡NUEVO! Importamos el StreamViewModel
-import com.enrique.tiago_app.ui.logic.AppScreen // El Enum que añadimos al MainViewModel
+import com.enrique.tiago_app.ui.logic.StreamViewModel
+import com.enrique.tiago_app.ui.logic.AppScreen
 import com.enrique.tiago_app.utils.AppConstants
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -38,6 +47,11 @@ fun ControlScreen(
     // ¡NUEVO! Observamos si el joystick está mandando datos
     val movState by controlViewModel.movementState.collectAsState()
     val isTeleopActive = (movState == AppConstants.MovementState.ENVIANDO_INFO)
+
+    // ¡NUEVO! Leemos los datos del robot para saber si habilitar los botones del menú
+    val robotData by mainViewModel.robotCapabilities.collectAsState()
+    val hasBase = robotData?.capabilities?.hasBase == true
+    val hasCameras = robotData?.capabilities?.cameras?.isNotEmpty() == true
 
     // ¡CAMBIO! Si salimos de la pantalla de Teleoperación, apagamos la división Y los motores
     LaunchedEffect(currentScreen) {
@@ -73,23 +87,32 @@ fun ControlScreen(
                     },
                     modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
                 )
+                // ¡NUEVO! Bloqueamos acceso si no hay base
                 NavigationDrawerItem(
-                    label = { Text("Teleoperación") },
+                    label = { Text(if (hasBase) "Teleoperación" else "Teleoperación (No Disp.)") },
                     selected = currentScreen == AppScreen.TELEOP,
                     onClick = {
-                        mainViewModel.navigateTo(AppScreen.TELEOP)
-                        scope.launch { drawerState.close() }
+                        if (hasBase) {
+                            mainViewModel.navigateTo(AppScreen.TELEOP)
+                            scope.launch { drawerState.close() }
+                        }
                     },
-                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
+                    badge = { if (!hasBase) Icon(Icons.Default.Close, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
                 )
+
+                // ¡NUEVO! Bloqueamos acceso si no hay cámaras
                 NavigationDrawerItem(
-                    label = { Text("Ver Cámara / Sensores") },
+                    label = { Text(if (hasCameras) "Cámara / Sensores" else "Cámaras (No Disp.)") },
                     selected = currentScreen == AppScreen.CAMERA,
                     onClick = {
-                        mainViewModel.navigateTo(AppScreen.CAMERA)
-                        scope.launch { drawerState.close() }
+                        if (hasCameras) {
+                            mainViewModel.navigateTo(AppScreen.CAMERA)
+                            scope.launch { drawerState.close() }
+                        }
                     },
-                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
+                    badge = { if (!hasCameras) Icon(Icons.Default.Close, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
                 )
 
                 Spacer(Modifier.weight(1f)) // Empuja el botón de desconectar hacia abajo
@@ -151,7 +174,7 @@ fun ControlScreen(
                     Column(modifier = Modifier.fillMaxSize()) {
                         // Mitad superior: Vídeo
                         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                            StreamView(streamViewModel = streamViewModel, isCompact = true)
+                            StreamView(streamViewModel = streamViewModel, cameraTopics = robotData?.capabilities?.cameraTopics ?: emptyList(), isCompact = true)
                         }
 
                         // Una línea divisoria bonita en el medio
@@ -162,32 +185,144 @@ fun ControlScreen(
 
                         // Mitad inferior: Joystick
                         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                            JoystickView(controlViewModel = controlViewModel, isCompact = true)
+                            JoystickView(controlViewModel = controlViewModel, teleopTopics = robotData?.capabilities?.teleopTopics ?: emptyList(), isCompact = true)
                         }
                     }
                 } else {
                     // MODO PANTALLA COMPLETA (El que teníamos antes)
                     when (currentScreen) {
-                        AppScreen.DASHBOARD -> {
-                            Column(
-                                modifier = Modifier.fillMaxSize(),
-                                verticalArrangement = Arrangement.Center,
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                Text("Información del Robot", style = MaterialTheme.typography.headlineSmall)
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Text("(Próximamente...)", style = MaterialTheme.typography.bodyMedium)
-                            }
-                        }
-                        AppScreen.TELEOP -> {
-                            JoystickView(controlViewModel = controlViewModel)
-                        }
-                        AppScreen.CAMERA -> {
-                            StreamView(streamViewModel = streamViewModel)
-                        }
+                        AppScreen.DASHBOARD -> DashboardView(mainViewModel) // ¡AQUÍ ESTÁ LA MAGIA!
+                        AppScreen.TELEOP -> JoystickView(controlViewModel = controlViewModel, teleopTopics = robotData?.capabilities?.teleopTopics ?: emptyList())
+                        AppScreen.CAMERA -> StreamView(streamViewModel = streamViewModel, cameraTopics = robotData?.capabilities?.cameraTopics ?: emptyList())
                     }
                 }
             }
         }
+    }
+}
+
+// ========================================================
+// ¡NUEVO! EL COMPONENTE VISUAL DEL DASHBOARD
+// ========================================================
+@Composable
+fun DashboardView(mainViewModel: MainViewModel) {
+    val robotData by mainViewModel.robotCapabilities.collectAsState()
+
+    // 1. Estado de Carga (Esperando JSON)
+    if (robotData == null) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                CircularProgressIndicator()
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(text = "Escaneando hardware del robot...", style = MaterialTheme.typography.bodyLarge)
+            }
+        }
+        return
+    }
+
+    // 2. Estado Listo (JSON recibido)
+    val identity = robotData!!.identity
+    val status = robotData!!.status
+    val caps = robotData!!.capabilities!!
+
+    // Usamos scroll por si añadimos muchas características y la pantalla es pequeña
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // --- SECCIÓN 1: ESTADO Y SALUD ---
+        ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Salud del Sistema", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Batería
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.BatteryFull, contentDescription = "Batería", tint = Color(0xFF4CAF50))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(text = "Batería: ${status?.batteryPct ?: "--"}%")
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                LinearProgressIndicator(
+                    progress = { ((status?.batteryPct ?: 0.0) / 100.0).toFloat() },
+                    modifier = Modifier.fillMaxWidth(),
+                    color = Color(0xFF4CAF50)
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Parada de Emergencia
+                val isEStop = status?.eStopActive == true
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = "E-Stop",
+                        tint = if (isEStop) MaterialTheme.colorScheme.error else Color.Gray
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = if (isEStop) "¡Parada de Emergencia ACTIVADA!" else "E-Stop Desactivado (Seguro)",
+                        color = if (isEStop) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+        }
+
+        // --- SECCIÓN 2: IDENTIDAD EN RED ---
+        ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Info, contentDescription = "Red")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Identidad de Red (ROS 2)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(text = "Hostname: ${identity?.hostname ?: "Desconocido"}")
+                Text(text = "ROS Domain ID: ${identity?.domainId ?: "0"}")
+            }
+        }
+
+        // --- SECCIÓN 3: CAPACIDADES HARDWARE ---
+        Text("Capacidades Detectadas", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+
+        // Lista de características usando un helper para simplificar código
+        CapabilityRow("Base Móvil (Twist)", caps.hasBase)
+        CapabilityRow("Manipulador (Brazo)", caps.hasManipulator)
+        CapabilityRow("Actuador Final (Gripper)", caps.hasGripper)
+        CapabilityRow("LiDAR (LaserScan/PointCloud)", caps.hasLidar)
+        CapabilityRow("IMU (Sensor Inercial)", caps.hasImu)
+        CapabilityRow("Odometría", caps.hasOdom)
+        CapabilityRow("Navegación (Nav2)", caps.hasNav)
+        CapabilityRow("Planificación (MoveIt)", caps.hasMoveit)
+
+        // Resumen de Cámaras
+        ElevatedCard(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Cámaras Físicas: ${caps.cameras.size}", fontWeight = FontWeight.Bold)
+                caps.cameras.forEach { cam ->
+                    Text("• ${cam.name}", style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        }
+    }
+}
+
+// Helper composable para pintar una fila de característica con su tick verde o cruz roja
+@Composable
+fun CapabilityRow(name: String, available: Boolean) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(text = name, style = MaterialTheme.typography.bodyLarge)
+        Icon(
+            imageVector = if (available) Icons.Default.CheckCircle else Icons.Default.Close,
+            contentDescription = if (available) "Disponible" else "No Disponible",
+            tint = if (available) Color(0xFF4CAF50) else MaterialTheme.colorScheme.error
+        )
     }
 }
