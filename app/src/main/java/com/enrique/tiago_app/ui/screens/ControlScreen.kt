@@ -140,9 +140,38 @@ fun ControlScreen(
                             Icon(Icons.Default.Menu, contentDescription = "Abrir Menú")
                         }
                     },
-                    // ¡NUEVO! Añadimos el interruptor de Pantalla Dividida arriba a la derecha
                     actions = {
-                        // Solo mostramos el botón si NO estamos en el Dashboard
+                        // 1. EL INDICADOR DE BATERÍA GLOBAL
+                        // Lo ponemos fuera del `if` para que se vea en todas las pantallas.
+                        val batteryPct = robotData?.status?.batteryPct
+                        if (batteryPct != null) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                // Cambiamos el color según el porcentaje
+                                val batteryColor = when {
+                                    batteryPct > 50 -> Color(0xFF4CAF50) // Verde
+                                    batteryPct > 25 -> Color(0xFFFFA000) // Amarillo
+                                    else -> MaterialTheme.colorScheme.error // Rojo (25 o menos)
+                                }
+
+                                Icon(
+                                    imageVector = Icons.Default.BatteryFull,
+                                    contentDescription = "Batería",
+                                    tint = batteryColor,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "${batteryPct.toInt()}%",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = batteryColor
+                                )
+                                Spacer(modifier = Modifier.width(16.dp)) // Separación con el Switch (si lo hay)
+                            }
+                        }
+
+                        // 2. EL INTERRUPTOR DE PANTALLA DIVIDIDA
+                        // Solo se pinta si estamos en la pantalla de TELEOP
                         if (currentScreen == AppScreen.TELEOP) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
@@ -154,7 +183,7 @@ fun ControlScreen(
                                 Switch(
                                     checked = isSplitScreen,
                                     onCheckedChange = { isSplitScreen = it },
-                                    modifier = Modifier.scale(0.8f) // Lo hacemos un pelín más pequeño
+                                    modifier = Modifier.scale(0.8f)
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                             }
@@ -170,22 +199,50 @@ fun ControlScreen(
             Box(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
                 // ¡NUEVO! Lógica de visualización
                 if (isSplitScreen && currentScreen == AppScreen.TELEOP) {
-                    // MODO PANTALLA DIVIDIDA: Una columna con dos cajas que ocupan el 50% cada una
                     Column(modifier = Modifier.fillMaxSize()) {
-                        // Mitad superior: Vídeo
-                        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                            StreamView(streamViewModel = streamViewModel, cameraTopics = robotData?.capabilities?.cameraTopics ?: emptyList(), isCompact = true)
+                        // MITAD SUPERIOR: CÁMARA O AVISO
+                        Box(
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            contentAlignment = Alignment.Center // Centramos el contenido por si es texto
+                        ) {
+                            if (hasCameras) {
+                                StreamView(
+                                    streamViewModel = streamViewModel,
+                                    cameraTopics = robotData?.capabilities?.cameraTopics
+                                        ?: emptyList(),
+                                    isCompact = true
+                                )
+                            } else {
+                                // ¡NUEVO! Aviso elegante si no hay cámaras
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Icon(
+                                        imageVector = Icons.Default.Info,
+                                        contentDescription = "Sin Cámara",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(48.dp)
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(
+                                        text = "El robot no tiene cámaras disponibles",
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        style = MaterialTheme.typography.bodyLarge
+                                    )
+                                }
+                            }
                         }
 
-                        // Una línea divisoria bonita en el medio
                         HorizontalDivider(
                             thickness = 3.dp,
                             color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
                         )
 
-                        // Mitad inferior: Joystick
+                        // MITAD INFERIOR: JOYSTICK
                         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                            JoystickView(controlViewModel = controlViewModel, teleopTopics = robotData?.capabilities?.teleopTopics ?: emptyList(), isCompact = true)
+                            JoystickView(
+                                controlViewModel = controlViewModel,
+                                teleopTopics = robotData?.capabilities?.teleopTopics ?: emptyList(),
+                                isCompact = true
+                            )
                         }
                     }
                 } else {
@@ -291,6 +348,8 @@ fun DashboardView(mainViewModel: MainViewModel) {
         // Lista de características usando un helper para simplificar código
         CapabilityRow("Base Móvil (Twist)", caps.hasBase)
         CapabilityRow("Manipulador (Brazo)", caps.hasManipulator)
+        CapabilityRow("Cabeza", caps.hasHead)
+        CapabilityRow("Torso", caps.hasTorso)
         CapabilityRow("Actuador Final (Gripper)", caps.hasGripper)
         CapabilityRow("LiDAR (LaserScan/PointCloud)", caps.hasLidar)
         CapabilityRow("IMU (Sensor Inercial)", caps.hasImu)

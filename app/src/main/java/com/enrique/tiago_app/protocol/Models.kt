@@ -175,6 +175,8 @@ data class CapabilitiesData(
     @SerialName("teleop_topics") val teleopTopics: List<String> = emptyList(),
     @SerialName("camera_topics") val cameraTopics: List<String> = emptyList(),
     @SerialName("has_manipulator") val hasManipulator: Boolean,
+    @SerialName("has_head") val hasHead: Boolean,
+    @SerialName("has_torso") val hasTorso: Boolean,
     @SerialName("has_gripper") val hasGripper: Boolean,
     @SerialName("has_imu") val hasImu: Boolean,
     @SerialName("has_odometry") val hasOdom: Boolean,
