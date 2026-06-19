@@ -6,6 +6,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import androidx.lifecycle.viewModelScope // ¡NUEVO! Para lanzar corrutinas en el ViewModel
 import kotlinx.coroutines.launch // ¡NUEVO!
+import kotlinx.coroutines.Job // ¡NUEVO! Para controlar el bucle de peticiones
+import kotlinx.coroutines.delay // ¡NUEVO! Para esperar entre peticiones
+import kotlinx.coroutines.isActive // ¡NUEVO! Para saber si el bucle sigue vivo
 
 // Importamos el Director y las Constantes
 import com.enrique.tiago_app.logic.ProtocolDirector
@@ -16,7 +19,8 @@ import com.enrique.tiago_app.protocol.RobotCapabilitiesData // ¡NUEVO! El model
 enum class AppScreen {
     DASHBOARD,    // La pantalla en blanco por defecto
     TELEOP,       // Tu joystick
-    CAMERA        // La nueva pantalla de cámara
+    CAMERA,        // La nueva pantalla de cámara
+    PLAY_MOTION
 }
 
 /**
@@ -28,24 +32,60 @@ class MainViewModel(
     private val director: ProtocolDirector
 ) : ViewModel() {
 
+    // ¡NUEVO! Guardamos la referencia a la tarea repetitiva
+    private var pollingJob: Job? = null
+
     init {
-        // ¡LA MAGIA DE LA AUTOMATIZACIÓN CORREGIDA!
+        // Vigilante del estado global
         viewModelScope.launch {
             director.stateManager.globalState.collect { state ->
-
-                if (state == AppConstants.GlobalState.SESION_INICIADA) {
-                    // ¡SOLUCIÓN AL BUCLE! Solo pedimos los datos si es la primera vez (están en null)
-                    if (robotCapabilities.value == null) {
-                        director.sendRequestRobotInfo()
+                when (state) {
+                    AppConstants.GlobalState.SESION_INICIADA,
+                    AppConstants.GlobalState.ESPERANDO_RECIBIR_INFORMACION_UNICA -> {
+                        // Mientras estemos en una sesión activa o actualizando info,
+                        // nos aseguramos de que el motor de peticiones esté encendido.
+                        startPolling()
+                    }
+                    AppConstants.GlobalState.IDLE,
+                    AppConstants.GlobalState.CONEXION_BACKEND -> {
+                        // Si nos desconectamos, apagamos el motor y limpiamos la pantalla.
+                        stopPolling()
+                        director.clearRobotCapabilities()
+                    }
+                    else -> {
+                        // En estados intermedios de conexión/desconexión, apagamos el polling por seguridad.
+                        stopPolling()
                     }
                 }
-                // Si volvemos a la pantalla de inicio o se corta la conexión, borramos los datos
-                else if (state == AppConstants.GlobalState.IDLE || state == AppConstants.GlobalState.CONEXION_BACKEND) {
-                    director.clearRobotCapabilities()
-                }
-
             }
         }
+    }
+
+    // ==========================================
+    // ¡NUEVO! SISTEMA DE ACTUALIZACIÓN CONTINUA
+    // ==========================================
+    private fun startPolling() {
+        // Si el bucle ya está funcionando, no hacemos nada
+        if (pollingJob?.isActive == true) return
+
+        pollingJob = viewModelScope.launch {
+            // Bucle infinito que durará hasta que alguien llame a stopPolling()
+            while (isActive) {
+                // Para no saturar al servidor, solo pedimos si la app está tranquila (SESION_INICIADA).
+                // Si el semáforo está bloqueado porque estamos pidiendo otra cosa, nos saltamos este turno.
+                if (director.stateManager.globalState.value == AppConstants.GlobalState.SESION_INICIADA) {
+                    director.sendRequestRobotInfo()
+                }
+
+                // Esperamos 5 segundos antes de volver a preguntar
+                delay(5000)
+            }
+        }
+    }
+
+    private fun stopPolling() {
+        pollingJob?.cancel()
+        pollingJob = null
     }
 
     // ==========================================

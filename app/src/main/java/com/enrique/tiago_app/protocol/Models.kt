@@ -2,6 +2,8 @@ package com.enrique.tiago_app.protocol
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
+import kotlinx.serialization.Transient
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 
 // ==========================================
@@ -48,6 +50,12 @@ data class ActionReqPayload(
     @SerialName("target") val target: String
 ): Payload
 
+// ¡NUEVO! Payload para detener la acción
+@Serializable
+data class StopActionReqPayload(
+    @SerialName("type") val type: String,
+    @SerialName("target") val target: String
+): Payload
 @Serializable
 data class ControlModeReqPayload(
     @SerialName("event") val event: String,
@@ -100,7 +108,9 @@ class EmptyPayload(): Payload
 // ==========================================
 // PAYLOADS DE RESPUESTA (Responses)
 // ==========================================
-
+sealed interface QueryDataResult
+data class RobotInfoResult(val info: RobotCapabilitiesData) : QueryDataResult
+data class ActionListResult(val actions: List<String>) : QueryDataResult
 @Serializable
 data class QueryRespPayload(
     @SerialName("success") val success: Boolean,
@@ -108,9 +118,14 @@ data class QueryRespPayload(
     @SerialName("resp_type") val respType: String,
     @SerialName("details") val details: String? = null,
     @SerialName("resp_data") val respData: JsonObject? = null,
-    // ¡MODIFICADO! Ahora mapea directamente la radiografía completa del robot
-    @SerialName("data") val data: RobotCapabilitiesData? = null
-): Payload
+    // ¡MODIFICADO! Usamos JsonElement porque el backend puede enviar un Objeto (ROBOT_INFO) o un Array de Strings (ACTIONS)
+    @SerialName("data") val rawData: JsonElement? = null
+): Payload {
+    // @Transient hace que la librería JSON lo ignore por completo.
+    // Es una variable normal de Kotlin que rellenaremos desde el Traductor.
+    @Transient
+    var parsedData: QueryDataResult? = null
+}
 
 @Serializable
 data class ActionFeedbackPayload(
@@ -165,7 +180,8 @@ data class IdentityData(
 @Serializable
 data class StatusData(
     @SerialName("battery_pct") val batteryPct: Double,
-    @SerialName("e_stop_active") val eStopActive: Boolean
+    @SerialName("e_stop_active") val eStopActive: Boolean,
+    @SerialName("is_charging") val isCharging: Boolean
 )
 
 @Serializable
@@ -182,7 +198,10 @@ data class CapabilitiesData(
     @SerialName("has_odometry") val hasOdom: Boolean,
     @SerialName("has_lidar") val hasLidar: Boolean,
     @SerialName("has_nav") val hasNav: Boolean,
-    @SerialName("has_moveit") val hasMoveit: Boolean
+    @SerialName("has_moveit") val hasMoveit: Boolean,
+    @SerialName("has_ft_sensor") val hasFtSensor: Boolean,
+    @SerialName("has_play_motion") val hasPlayMotion: Boolean
+
 )
 
 @Serializable

@@ -88,9 +88,11 @@ class ProtocolStateManager {
                 }
 
                 // Submáquina de Movimiento
-                if (type == AppConstants.MsgType.CONTROL_MODE_REQ || type == AppConstants.MsgType.CONTROL_REQ) {
+                if (type == AppConstants.MsgType.CONTROL_MODE_REQ || type == AppConstants.MsgType.CONTROL_REQ ||
+                    type == AppConstants.MsgType.ACTION_REQ || type == AppConstants.MsgType.STOP_ACTION_REQ) {
                     when (_movementState.value) {
                         AppConstants.MovementState.IDLE -> {
+                            if (type == AppConstants.MsgType.ACTION_REQ) return Pair(true, "")
                             if (msg.payload is ControlModeReqPayload) {
                                 if (msg.payload.event == AppConstants.ControlEvent.START) return Pair(true, "")
                             }
@@ -102,6 +104,11 @@ class ProtocolStateManager {
                                 if (msg.payload.event == AppConstants.ControlEvent.STOP) return Pair(true, "")
                             }
                             return Pair(false, "Comando denegado. El estado actual es ENVIANDO_INFO.")
+                        }
+                        // ¡NUEVO! Permitimos detener la acción si está en curso
+                        AppConstants.MovementState.ESPERANDO_EJECUTAR_ACCION -> {
+                            if (type == AppConstants.MsgType.STOP_ACTION_REQ) return Pair(true, "")
+                            return Pair(false, "Comando denegado. Ya hay una acción ejecutándose.")
                         }
                         else -> return Pair(false, "Estado de movimiento no válido para envío.")
                     }
@@ -151,6 +158,12 @@ class ProtocolStateManager {
                 AppConstants.ControlEvent.START -> transitionMovement(AppConstants.MovementState.ESPERANDO_PERMISO_ENVIO_INFO)
                 AppConstants.ControlEvent.STOP -> transitionMovement(AppConstants.MovementState.ESPERANDO_TERMINAR_ENVIO_INFO)
             }
+        }
+        // ¡NUEVO! Transiciones de las acciones al enviarlas
+        else if (type == AppConstants.MsgType.ACTION_REQ) {
+            transitionMovement(AppConstants.MovementState.ESPERANDO_EJECUTAR_ACCION)
+        } else if (type == AppConstants.MsgType.STOP_ACTION_REQ) {
+            transitionMovement(AppConstants.MovementState.ESPERANDO_DETENER_ACCION)
         }
         // ¡NUEVO! Peticiones de cámara
         else if (type == AppConstants.MsgType.STREAM_REQ) {
@@ -256,6 +269,58 @@ class ProtocolStateManager {
                 val errorReason = if (!isCorrectPayload) "Respuesta del servidor con formato incorrecto."
                 else (respMsg.payload as? QueryRespPayload)?.details ?: "Error desconocido al obtener información."
                 showSystemAlert("Aviso de escaneo: $errorReason")
+            }
+            return true
+        }
+
+        // ==========================================
+        // Respuestas de Acciones y Paradas
+        // ==========================================
+        else if (reqMsg.header.type == AppConstants.MsgType.ACTION_REQ) {
+            // Permitimos recibir updates tanto si estamos ejecutando como si le hemos dado a parar
+            if (_movementState.value != AppConstants.MovementState.ESPERANDO_EJECUTAR_ACCION &&
+                _movementState.value != AppConstants.MovementState.ESPERANDO_DETENER_ACCION) return false
+
+            val actionFeedback = respMsg.payload as? ActionFeedbackPayload
+            val isCorrectPayload = actionFeedback != null
+
+            if (!isCorrectPayload) {
+                transitionMovement(AppConstants.MovementState.IDLE)
+                showSystemAlert("Error de formato al recibir el progreso de la acción.")
+                return true
+            }
+
+            val doneExec = actionFeedback.doneExec ?: true
+
+            if (!success) {
+                transitionMovement(AppConstants.MovementState.IDLE)
+                showSystemAlert("Error ejecutando el movimiento: ${actionFeedback?.details ?: "Fallo interno"}")
+            } else if (success && doneExec) {
+                transitionMovement(AppConstants.MovementState.IDLE)
+
+                // ¡AQUÍ ESTÁ EL TEXTO CORRECTO!
+                val detailsStr = actionFeedback?.details ?: ""
+                if (detailsStr.contains("detenida", ignoreCase = true)) {
+                    showSystemAlert("El movimiento se ha detenido correctamente.")
+                } else {
+                    showSystemAlert("¡Éxito!\n\nEl movimiento se ha completado correctamente.")
+                }
+            }
+
+            return true
+        }
+        else if (reqMsg.header.type == AppConstants.MsgType.STOP_ACTION_REQ) {
+            if (_movementState.value != AppConstants.MovementState.ESPERANDO_DETENER_ACCION) return false
+
+            val isCorrectPayload = respMsg.payload is GenericRespPayload
+            if (success && isCorrectPayload) {
+                // ROS 2 ha aceptado la petición de parada.
+                // NO pasamos a IDLE todavía. Esperamos a que la acción confirme que los motores se pararon.
+            } else {
+                transitionMovement(AppConstants.MovementState.ESPERANDO_EJECUTAR_ACCION)
+                val errorReason = if (!isCorrectPayload) "Formato incorrecto."
+                else (respMsg.payload as? GenericRespPayload)?.details ?: "El robot no pudo detenerse."
+                showSystemAlert("No se pudo detener la acción: $errorReason")
             }
             return true
         }
@@ -407,9 +472,17 @@ class ProtocolStateManager {
             AppConstants.MsgType.COMMAND_REQ, AppConstants.MsgType.QUERY_REQ -> {
                 if (_globalState.value.startsWith("ESPERANDO_")) Pair(true, "Bloqueado: Servidor procesando sesión.") else Pair(false, "")
             }
-            // Carril de Movimiento
-            AppConstants.MsgType.CONTROL_MODE_REQ, AppConstants.MsgType.CONTROL_REQ -> {
-                if (_movementState.value.startsWith("ESPERANDO_")) Pair(true, "Bloqueado: Petición de movimiento en curso.") else Pair(false, "")
+            // Carril de Movimiento (Joystick + Acciones)
+            AppConstants.MsgType.CONTROL_MODE_REQ, AppConstants.MsgType.CONTROL_REQ,
+            AppConstants.MsgType.ACTION_REQ, AppConstants.MsgType.STOP_ACTION_REQ -> {
+                // ¡EXCEPCIÓN MÁGICA! Permitimos que el mensaje de Stop pase si estamos actualmente ejecutando una acción
+                if (msgType == AppConstants.MsgType.STOP_ACTION_REQ && _movementState.value == AppConstants.MovementState.ESPERANDO_EJECUTAR_ACCION) {
+                    Pair(false, "")
+                } else if (_movementState.value.startsWith("ESPERANDO_")) {
+                    Pair(true, "Bloqueado: Petición de movimiento en curso.")
+                } else {
+                    Pair(false, "")
+                }
             }
             // Carril de Vídeo
             AppConstants.MsgType.STREAM_REQ, AppConstants.MsgType.STOP_STREAM_REQ -> {

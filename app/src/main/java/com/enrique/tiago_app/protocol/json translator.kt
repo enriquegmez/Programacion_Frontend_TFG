@@ -37,7 +37,8 @@ class MessageCodec {
             val payloadObj: Payload = when (header.type) {
                 AppConstants.MsgType.COMMAND_REQ -> jsonFormat.decodeFromJsonElement<CommandReqPayload>(payloadJson)
                 AppConstants.MsgType.QUERY_REQ -> jsonFormat.decodeFromJsonElement<QueryReqPayload>(payloadJson)
-                AppConstants.MsgType.ACTION_REQ, AppConstants.MsgType.STOP_ACTION_REQ -> jsonFormat.decodeFromJsonElement<ActionReqPayload>(payloadJson)
+                AppConstants.MsgType.ACTION_REQ -> jsonFormat.decodeFromJsonElement<ActionReqPayload>(payloadJson)
+                AppConstants.MsgType.STOP_ACTION_REQ -> jsonFormat.decodeFromJsonElement<StopActionReqPayload>(payloadJson)
                 AppConstants.MsgType.CONTROL_MODE_REQ -> jsonFormat.decodeFromJsonElement<ControlModeReqPayload>(payloadJson)
                 AppConstants.MsgType.CONTROL_REQ -> jsonFormat.decodeFromJsonElement<ControlReqPayload>(payloadJson)
                 AppConstants.MsgType.STREAM_REQ -> jsonFormat.decodeFromJsonElement<StreamReqPayload>(payloadJson)
@@ -48,8 +49,20 @@ class MessageCodec {
                 AppConstants.MsgType.RESP -> {
                     val respType = payloadJson.jsonObject["resp_type"]?.jsonPrimitive?.content
                     when (respType) {
-                        AppConstants.RespType.QUERY_RESP -> jsonFormat.decodeFromJsonElement<QueryRespPayload>(payloadJson)
-                        AppConstants.RespType.ACTION_FEEDBACK, AppConstants.RespType.STOP_ACTION_FEEDBACK -> jsonFormat.decodeFromJsonElement<ActionFeedbackPayload>(payloadJson)
+                        AppConstants.RespType.QUERY_RESP -> {
+                            // 1. Decodificamos la parte genérica (success, code, details)
+                            val resp = jsonFormat.decodeFromJsonElement<QueryRespPayload>(payloadJson)
+
+                            // 2. ¡MAGIA! Inspeccionamos el campo "data" aquí mismo
+                            val dataElement = payloadJson.jsonObject["data"]
+                            resp.parsedData = when (dataElement) {
+                                is JsonObject -> RobotInfoResult(jsonFormat.decodeFromJsonElement(dataElement))
+                                is JsonArray -> ActionListResult(jsonFormat.decodeFromJsonElement(dataElement))
+                                else -> null
+                            }
+                            resp // Devolvemos el objeto ya traducido a puro Kotlin
+                        }
+                        AppConstants.RespType.ACTION_FEEDBACK -> jsonFormat.decodeFromJsonElement<ActionFeedbackPayload>(payloadJson)
                         AppConstants.RespType.STREAM_RESP -> jsonFormat.decodeFromJsonElement<StreamRespPayload>(payloadJson)
                         else -> jsonFormat.decodeFromJsonElement<GenericRespPayload>(payloadJson)
                     }
@@ -79,6 +92,7 @@ class MessageCodec {
             is CommandReqPayload -> jsonFormat.encodeToJsonElement(p)
             is QueryReqPayload -> jsonFormat.encodeToJsonElement(p)
             is ActionReqPayload -> jsonFormat.encodeToJsonElement(p)
+            is StopActionReqPayload -> jsonFormat.encodeToJsonElement(p)
             is ControlModeReqPayload -> jsonFormat.encodeToJsonElement(p)
             is ControlReqPayload -> jsonFormat.encodeToJsonElement(p)
             is StreamReqPayload -> jsonFormat.encodeToJsonElement(p)

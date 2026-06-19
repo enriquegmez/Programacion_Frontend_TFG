@@ -6,6 +6,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.BatteryFull
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.CheckCircle
@@ -25,14 +26,16 @@ import com.enrique.tiago_app.ui.logic.ControlViewModel
 import com.enrique.tiago_app.ui.logic.MainViewModel
 import com.enrique.tiago_app.ui.logic.StreamViewModel
 import com.enrique.tiago_app.ui.logic.AppScreen
+import com.enrique.tiago_app.ui.logic.PlayMotionViewModel
 import com.enrique.tiago_app.utils.AppConstants
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ControlScreen(
+fun MainScreen(
     mainViewModel: MainViewModel,
     controlViewModel: ControlViewModel,
-    streamViewModel: StreamViewModel // ¡NUEVO! Añadimos el ViewModel del vídeo
+    streamViewModel: StreamViewModel, // ¡NUEVO! Añadimos el ViewModel del vídeo
+    playMotionViewModel: PlayMotionViewModel
 ) {
     // Observamos en qué pantalla estamos
     val currentScreen by mainViewModel.currentScreen.collectAsState()
@@ -52,6 +55,8 @@ fun ControlScreen(
     val robotData by mainViewModel.robotCapabilities.collectAsState()
     val hasBase = robotData?.capabilities?.hasBase == true
     val hasCameras = robotData?.capabilities?.cameras?.isNotEmpty() == true
+
+    val hasPlayMotion = robotData?.capabilities?.hasPlayMotion == true
 
     // ¡CAMBIO! Si salimos de la pantalla de Teleoperación, apagamos la división Y los motores
     LaunchedEffect(currentScreen) {
@@ -115,6 +120,20 @@ fun ControlScreen(
                     badge = { if (!hasCameras) Icon(Icons.Default.Close, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
                 )
 
+                // ¡NUEVO! Menú PlayMotion
+                NavigationDrawerItem(
+                    label = { Text(if (hasPlayMotion) "Movimientos Predefinidos" else "Movimientos (No Disp.)") },
+                    selected = currentScreen == AppScreen.PLAY_MOTION,
+                    onClick = {
+                        if (hasPlayMotion) {
+                            mainViewModel.navigateTo(AppScreen.PLAY_MOTION)
+                            scope.launch { drawerState.close() }
+                        }
+                    },
+                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
+                    badge = { if (!hasPlayMotion) Icon(Icons.Default.Close, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
+                )
+
                 Spacer(Modifier.weight(1f)) // Empuja el botón de desconectar hacia abajo
 
                 // Botón de desconexión general
@@ -153,10 +172,13 @@ fun ControlScreen(
                                     else -> MaterialTheme.colorScheme.error // Rojo (25 o menos)
                                 }
 
+                                val isCharging = robotData?.status?.isCharging == true
+
                                 Icon(
-                                    imageVector = Icons.Default.BatteryFull,
+                                    // Si está cargando pinta el Rayo, si no, la Pila. (Si no tiene sensor, isCharging será false siempre).
+                                    imageVector = if (isCharging) Icons.Default.Bolt else Icons.Default.BatteryFull,
                                     contentDescription = "Batería",
-                                    tint = batteryColor,
+                                    tint = if (isCharging) Color(0xFFFFEB3B) else batteryColor,
                                     modifier = Modifier.size(20.dp)
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
@@ -251,6 +273,7 @@ fun ControlScreen(
                         AppScreen.DASHBOARD -> DashboardView(mainViewModel) // ¡AQUÍ ESTÁ LA MAGIA!
                         AppScreen.TELEOP -> JoystickView(controlViewModel = controlViewModel, teleopTopics = robotData?.capabilities?.teleopTopics ?: emptyList())
                         AppScreen.CAMERA -> StreamView(streamViewModel = streamViewModel, cameraTopics = robotData?.capabilities?.cameraTopics ?: emptyList())
+                        AppScreen.PLAY_MOTION -> PlayMotionScreen(viewModel = playMotionViewModel)
                     }
                 }
             }
@@ -265,7 +288,11 @@ fun ControlScreen(
 fun DashboardView(mainViewModel: MainViewModel) {
     val robotData by mainViewModel.robotCapabilities.collectAsState()
 
-    // 1. Estado de Carga (Esperando JSON)
+    // 1. ¡MUEVE ESTO AQUÍ ARRIBA!
+    // Así la memoria del scroll sobrevive a las actualizaciones.
+    val scrollState = rememberScrollState()
+
+    // 2. Estado de Carga (Esperando JSON)
     if (robotData == null) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -277,16 +304,15 @@ fun DashboardView(mainViewModel: MainViewModel) {
         return
     }
 
-    // 2. Estado Listo (JSON recibido)
     val identity = robotData!!.identity
     val status = robotData!!.status
     val caps = robotData!!.capabilities!!
 
-    // Usamos scroll por si añadimos muchas características y la pantalla es pequeña
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
+            // 3. USA LA VARIABLE AQUÍ
+            .verticalScroll(scrollState)
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -298,9 +324,20 @@ fun DashboardView(mainViewModel: MainViewModel) {
 
                 // Batería
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.BatteryFull, contentDescription = "Batería", tint = Color(0xFF4CAF50))
+                    val isCharging = status?.isCharging == true
+
+                    Icon(
+                        imageVector = if (isCharging) Icons.Default.Bolt else Icons.Default.BatteryFull,
+                        contentDescription = "Batería",
+                        tint = if (isCharging) Color(0xFFFFEB3B) else Color(0xFF4CAF50)
+                    )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = "Batería: ${status?.batteryPct ?: "--"}%")
+
+                    // El texto cambia mágicamente en cuanto enchufas el robot
+                    Text(
+                        text = if (isCharging) "Cargando... (${status?.batteryPct ?: "--"}%)"
+                        else "Batería: ${status?.batteryPct ?: "--"}%"
+                    )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 LinearProgressIndicator(
@@ -356,6 +393,8 @@ fun DashboardView(mainViewModel: MainViewModel) {
         CapabilityRow("Odometría", caps.hasOdom)
         CapabilityRow("Navegación (Nav2)", caps.hasNav)
         CapabilityRow("Planificación (MoveIt)", caps.hasMoveit)
+        CapabilityRow("Movimientos grabados (PlayMotion)", caps.hasPlayMotion ?: false)
+        CapabilityRow("Sensor de Fuerza-Par (F/T)", caps.hasFtSensor ?: false)
 
         // Resumen de Cámaras
         ElevatedCard(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {

@@ -30,6 +30,11 @@ import com.enrique.tiago_app.protocol.StopStreamReqPayload
 import com.enrique.tiago_app.protocol.StreamRespPayload
 import com.enrique.tiago_app.protocol.QueryReqPayload
 import com.enrique.tiago_app.protocol.QueryRespPayload
+import com.enrique.tiago_app.protocol.ActionReqPayload
+import com.enrique.tiago_app.protocol.StopActionReqPayload
+import com.enrique.tiago_app.protocol.ActionFeedbackPayload
+import com.enrique.tiago_app.protocol.RobotInfoResult
+import com.enrique.tiago_app.protocol.ActionListResult
 
 // IMPORTS DE TU CAPA DE COMUNICACIÓN (Asegúrate de que la ruta es correcta)
 import com.enrique.tiago_app.communication.WebSocketClient
@@ -63,6 +68,13 @@ class ProtocolDirector(
     // ¡NUEVO! Estado observable de la radiografía del robot
     private val _robotCapabilities = MutableStateFlow<RobotCapabilitiesData?>(null)
     val robotCapabilities: StateFlow<RobotCapabilitiesData?> = _robotCapabilities.asStateFlow()
+
+    // ¡NUEVO! Variables observables para las Acciones
+    private val _availableActions = MutableStateFlow<List<String>>(emptyList())
+    val availableActions: StateFlow<List<String>> = _availableActions.asStateFlow()
+
+    private val _actionFeedback = MutableSharedFlow<ActionFeedbackPayload>()
+    val actionFeedback = _actionFeedback.asSharedFlow()
 
     init {
         // 1. Escuchar los mensajes entrantes (El SharedFlow que hiciste)
@@ -176,7 +188,7 @@ class ProtocolDirector(
     // ¡NUEVO! Solicita la radiografía completa del robot
     fun sendRequestRobotInfo() {
         val payload = QueryReqPayload(
-            resourceType = "ROBOT_INFO"
+            resourceType = AppConstants.Resource.ROBOT_INFO
         )
         dispatchMessage(AppConstants.MsgType.QUERY_REQ, payload)
     }
@@ -232,6 +244,30 @@ class ProtocolDirector(
     fun sendStopStream(resource: String) {
         val payload = StopStreamReqPayload(resource = resource)
         dispatchMessage(AppConstants.MsgType.STOP_STREAM_REQ, payload)
+    }
+
+    // ==========================================
+    // ¡NUEVO! MÉTODOS DE ACCIONES (PlayMotion)
+    // ==========================================
+    fun sendQueryActionsReq() {
+        val payload = QueryReqPayload(resourceType = AppConstants.Resource.ACTIONS)
+        dispatchMessage(AppConstants.MsgType.QUERY_REQ, payload)
+    }
+
+    fun sendActionReq(target: String) {
+        val payload = ActionReqPayload(
+            type = AppConstants.ActionType.EXEC_ACTION,
+            target = target
+        )
+        dispatchMessage(AppConstants.MsgType.ACTION_REQ, payload)
+    }
+
+    fun sendStopActionReq(target: String) {
+        val payload = StopActionReqPayload(
+            type = AppConstants.ActionType.EXEC_ACTION,
+            target = target
+        )
+        dispatchMessage(AppConstants.MsgType.STOP_ACTION_REQ, payload)
     }
 
     // ==========================================
@@ -373,6 +409,8 @@ class ProtocolDirector(
 
         // 2. EXTRAER DE LA LIBRETA (Tu optimización)
         // Al usar .remove(), sacamos el mensaje de la lista para SIEMPRE en un solo paso.
+        // Si es la primera respuesta a un ID, lo saca y desactiva el timeout.
+        // Si es un feedback posterior, devolverá null porque ya se sacó.
         val reqMsg = pendingRequests.remove(respMsg.header.msgId)
 
         // 3. LA VÍA RÁPIDA DE LOS ACKs
@@ -389,6 +427,29 @@ class ProtocolDirector(
             return
         }
 
+        // ==========================================
+        // 5. ¡LÓGICA REFINADA PARA EL ACTION FEEDBACK!
+        // ==========================================
+        if (respMsg.header.type == AppConstants.MsgType.RESP && respMsg.payload is ActionFeedbackPayload) {
+
+            // 5.1. Emitimos inmediatamente el progreso a la UI (Barra de carga, etc.)
+            scope.launch {
+                _actionFeedback.emit(respMsg.payload)
+            }
+
+            // 5.2. Determinamos qué darle al Semáforo
+            // Si reqMsg NO es nulo, significa que es la PRIMERA respuesta (Hemos salvado el timeout)
+            // Si reqMsg ES nulo, es un feedback continuo (ej: 20%, 50%), creamos la petición fantasma
+            val originalOrDummyReq = reqMsg ?: RobotMessage(
+                header = MessageHeader(respMsg.header.msgId, AppConstants.MsgType.ACTION_REQ, "", 0.0),
+                payload = EmptyPayload()
+            )
+
+            commitAndCheckSync(originalOrDummyReq, respMsg)
+            return // Salimos porque la acción ya ha sido procesada
+        }
+
+        // 6. RESPUESTAS NORMALES (Las que solo responden una vez)
         if (reqMsg != null) {
             commitAndCheckSync(reqMsg, respMsg)
 
@@ -403,12 +464,21 @@ class ProtocolDirector(
                 }
             }
 
-            // ¡NUEVO! Si era una petición de información del robot y fue un éxito
             if (reqMsg.header.type == AppConstants.MsgType.QUERY_REQ) {
                 val queryResp = respMsg.payload as? QueryRespPayload
-                if (queryResp?.success == true && queryResp.data != null) {
-                    // Guardamos la radiografía en el estado observable para que la UI se pinte sola
-                    _robotCapabilities.value = queryResp.data
+                if (queryResp?.success == true) {
+                    // ¡NUEVO! Evaluamos el tipo de dato recibido usando las clases puras de Kotlin
+                    when (val data = queryResp.parsedData) {
+                        is RobotInfoResult -> {
+                            _robotCapabilities.value = data.info
+                        }
+                        is ActionListResult -> {
+                            _availableActions.value = data.actions
+                        }
+                        null -> {
+                            Log.w(tag, "QueryResp sin datos válidos (No es ni Lista ni Objeto)")
+                        }
+                    }
                 }
             }
 
@@ -420,6 +490,7 @@ class ProtocolDirector(
                 }
             }
         } else {
+            // 7. RESPUESTAS HUÉRFANAS (Ej: Rechazos de joystick por lag)
             val payload = respMsg.payload
 
             if (respMsg.header.type == AppConstants.MsgType.RESP &&

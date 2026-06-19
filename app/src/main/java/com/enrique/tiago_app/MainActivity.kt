@@ -31,11 +31,12 @@ import com.enrique.tiago_app.utils.AppConstants
 import com.enrique.tiago_app.ui.logic.MainViewModel
 import com.enrique.tiago_app.ui.logic.ControlViewModel
 import com.enrique.tiago_app.ui.logic.StreamViewModel // ¡NUEVO IMPORT!
+import com.enrique.tiago_app.ui.logic.PlayMotionViewModel
 
 // --- IMPORTS DE TUS PANTALLAS (SCREENS) ---
 import com.enrique.tiago_app.ui.screens.WebsocketScreen
 import com.enrique.tiago_app.ui.screens.MenuScreen
-import com.enrique.tiago_app.ui.screens.ControlScreen
+import com.enrique.tiago_app.ui.screens.MainScreen
 
 /**
  * 1. CAJA FUERTE DE DEPENDENCIAS
@@ -98,6 +99,11 @@ fun AppNavigation() {
         StreamViewModel(AppDependencies.director)
     }
 
+    // ¡NUEVO! Instanciamos el cerebro de las acciones predefinidas
+    val playMotionViewModel: PlayMotionViewModel = viewModel {
+        PlayMotionViewModel(AppDependencies.director)
+    }
+
     // Observamos el semáforo global para movernos entre pantallas
     val globalState by mainViewModel.globalState.collectAsState()
 
@@ -105,22 +111,38 @@ fun AppNavigation() {
 
     // Lógica de navegación reactiva
     LaunchedEffect(globalState) {
+        // Obtenemos la pantalla exacta que está viendo el usuario ahora mismo
+        val currentRoute = navController.currentDestination?.route
+
         when (globalState) {
             AppConstants.GlobalState.IDLE -> {
-                navController.navigate("login") {
-                    popUpTo(0) // Limpia el historial para no volver atrás
+                // Viajamos solo si NO estamos ya en "login"
+                if (currentRoute != "login") {
+                    navController.navigate("login") {
+                        popUpTo(0) // Limpia el historial para no volver atrás
+                    }
                 }
             }
             AppConstants.GlobalState.CONEXION_BACKEND -> {
-                navController.navigate("menu") {
-                    popUpTo(0)
+                if (currentRoute != "conexion") {
+                    navController.navigate("conexion") {
+                        popUpTo(0)
+                    }
                 }
             }
             AppConstants.GlobalState.SESION_INICIADA -> {
-                navController.navigate("control") {
-                    popUpTo(0)
+                // ¡LA MAGIA! Solo destruimos y recreamos la pantalla si venimos de otro lado.
+                // Si el estado pasó a "ESPERANDO_INFO" y volvió a "SESION_INICIADA",
+                // el currentRoute seguirá siendo "control", el 'if' se salta,
+                // y la pantalla se queda 100% intacta.
+                if (currentRoute != "menu principal") {
+                    navController.navigate("menu principal") {
+                        popUpTo(0)
+                    }
                 }
             }
+            // Los estados "ESPERANDO_..." no están en el 'when',
+            // así que el GPS simplemente se queda quieto y no toca la pantalla.
         }
     }
 
@@ -149,16 +171,17 @@ fun AppNavigation() {
         }
 
         // Pantalla 2: Menú Intermedio
-        composable("menu") {
+        composable("conexion") {
             MenuScreen(viewModel = mainViewModel)
         }
 
         // Pantalla 3: Teleoperación con Joystick
-        composable("control") {
-            ControlScreen(
+        composable("menu principal") {
+            MainScreen(
                 controlViewModel = controlViewModel,
                 mainViewModel = mainViewModel,
-                streamViewModel = streamViewModel
+                streamViewModel = streamViewModel,
+                playMotionViewModel = playMotionViewModel
             )
         }
     }

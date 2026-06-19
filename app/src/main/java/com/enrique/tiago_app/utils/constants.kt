@@ -7,7 +7,7 @@ package com.enrique.tiago_app.utils
  */
 object AppConstants {
 
-    const val DEFAULT_SERVER_IP = "192.168.68.79"
+    const val DEFAULT_SERVER_IP = "192.168.68.83"
     const val DEFAULT_SERVER_PORT = 8765
 
     // ==========================================
@@ -30,6 +30,9 @@ object AppConstants {
         const val ESPERANDO_PERMISO_ENVIO_INFO = "ESPERANDO_PERMISO_ENVIO_INFO"
         const val ENVIANDO_INFO = "ENVIANDO_INFO"
         const val ESPERANDO_TERMINAR_ENVIO_INFO = "ESPERANDO_TERMINAR_ENVIO_INFO"
+        const val ESPERANDO_EJECUTAR_ACCION = "ESPERANDO_EJECUTAR_ACCION"
+        const val ESPERANDO_DETENER_ACCION = "ESPERANDO_DETENER_ACCION"
+
     }
 
     object MonitorState {
@@ -83,6 +86,21 @@ object AppConstants {
         const val END = "end"
         const val GET_HISTORY = "get_history"
         const val SSH = "ssh"
+    }
+
+    // ¡NUEVO! Tipos de recursos para QueryReq
+    object Resource {
+        const val ROBOT_INFO = "ROBOT_INFO"
+        const val TELEOP = "TELEOP"
+        const val CAMERAS = "CAMERAS"
+        const val TOPICS = "TOPICS"
+        const val SENSORS = "SENSORS"
+        const val ACTIONS = "ACTIONS"
+    }
+
+    // ¡NUEVO! Tipos de acciones para ActionReq
+    object ActionType {
+        const val EXEC_ACTION = "EXEC_ACTION"
     }
 
     object ControlEvent {
