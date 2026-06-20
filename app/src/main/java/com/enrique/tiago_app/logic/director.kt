@@ -216,18 +216,19 @@ class ProtocolDirector(
         _availableActions.value = emptyList()
     }
 
-    fun sendStartMovement(customTopic: String) {
+    fun sendStartMovement(customTopic: String = "", type: String = "TELEOP") {
         val payload = ControlModeReqPayload(
             event = AppConstants.ControlEvent.START,
-            type = "TELEOP",
+            type = type,
             topic = customTopic.ifBlank { null }
         )
         dispatchMessage(AppConstants.MsgType.CONTROL_MODE_REQ, payload)
     }
-    fun sendStopMovement() {
+
+    fun sendStopMovement(type: String = "TELEOP") {
         val payload = ControlModeReqPayload(
             event = AppConstants.ControlEvent.STOP,
-            type = "TELEOP"
+            type = type
         )
         dispatchMessage(AppConstants.MsgType.CONTROL_MODE_REQ, payload)
     }
@@ -387,6 +388,11 @@ class ProtocolDirector(
     // CEREBRO DE RECEPCIÓN (Inbound)
     // ==========================================
     private fun handleIncomingMessage(rawJson: String) {
+        // ¡EL CHIVATO!
+        if (rawJson.contains("torso_lift_joint")) {
+            Log.d("CHIVATO_JSON", "Paquete crudo: $rawJson")
+        }
+
         val respMsg: RobotMessage
         try {
             respMsg = codec.decode(rawJson)

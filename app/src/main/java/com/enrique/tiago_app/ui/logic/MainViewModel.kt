@@ -21,7 +21,8 @@ enum class AppScreen {
     TELEOP,       // Tu joystick
     CAMERA,        // La nueva pantalla de cámara
     PLAY_MOTION,
-    INVESTIGACION
+    INVESTIGACION,
+    ARTICULACIONES
 }
 
 /**

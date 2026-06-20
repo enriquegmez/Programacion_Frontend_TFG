@@ -210,7 +210,8 @@ data class CapabilitiesData(
 data class JointLimit(
     @SerialName("name") val name: String,
     @SerialName("min") val min: Float,
-    @SerialName("max") val max: Float
+    @SerialName("max") val max: Float,
+    @SerialName("current_value") val currentValue: Float? = null // ¡NUEVO! Posición real
 )
 
 @Serializable

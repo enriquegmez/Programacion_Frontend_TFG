@@ -38,6 +38,9 @@ class ControlViewModel(
     private var currentV: Float = 0f
     private var currentW: Float = 0f
 
+    // ¡NUEVO CANDADO! Sabe si el interruptor del teleop está encendido o no
+    private var isJoystickEnabledLocal = false
+
     // ==========================================
     // 3. INICIALIZACIÓN Y BUCLE (10 Hz)
     // ==========================================
@@ -46,33 +49,25 @@ class ControlViewModel(
         startTeleopLoop()
     }
 
-    /**
-     * Bucle infinito ligado al ciclo de vida del ViewModel.
-     * En robótica, es crucial enviar comandos a una frecuencia fija (ej: 10Hz).
-     */
     private var consecutiveZeros = 0
 
     private fun startTeleopLoop() {
         viewModelScope.launch {
             while (isActive) {
-                if (movementState.value == AppConstants.MovementState.ENVIANDO_INFO) {
+                // ¡LA MAGIA! Solo disparamos si el semáforo global está en verde Y nuestro candado local está abierto.
+                if (movementState.value == AppConstants.MovementState.ENVIANDO_INFO && isJoystickEnabledLocal) {
 
                     if (currentV == 0f && currentW == 0f) {
                         consecutiveZeros++
-                        // Cuando está parado, enviamos la velocidad 0.0 cada 4 ciclos (400ms -> 2.5Hz)
-                        // Esto mantiene vivo el Watchdog del servidor ahorrando un 75% de batería y red
                         if (consecutiveZeros <= 3 || consecutiveZeros % 4 == 0) {
                             director.sendJoystickVelocity(currentV, currentW)
                         }
                     } else {
-                        // El usuario está moviendo el joystick
                         consecutiveZeros = 0
-                        // Enviamos a máxima velocidad (cada 100ms -> 10Hz)
                         director.sendJoystickVelocity(currentV, currentW)
                     }
                 }
 
-                // El bucle principal siempre gira a 10Hz para detectar tus dedos al instante
                 delay(100L)
             }
         }
@@ -82,28 +77,20 @@ class ControlViewModel(
     // 4. EVENTOS DESDE LA UI
     // ==========================================
 
-    /**
-     * Llamado cada vez que el usuario arrastra el dedo por el JoystickComponent.
-     * Solo actualiza la memoria interna; el bucle se encargará de enviarlo.
-     */
     fun updateJoystick(v: Float, w: Float) {
         currentV = v
         currentW = w
     }
 
-    /**
-     * Llamado por el Switch (Interruptor) de la pantalla.
-     * Pide permiso al servidor para empezar a publicar o para frenar.
-     */
     fun toggleTeleop(enable: Boolean) {
+        // ¡ACTUALIZAMOS EL CANDADO!
+        isJoystickEnabledLocal = enable
+
         if (enable) {
-            // Queremos encender
-            // ¡EL FIX! Borramos cualquier memoria residual de sesiones pasadas
             currentV = 0f
             currentW = 0f
             director.sendStartMovement(_targetTopic.value)
         } else {
-            // Queremos apagar. Primero, por seguridad, reseteamos el joystick interno
             currentV = 0f
             currentW = 0f
             director.sendStopMovement()

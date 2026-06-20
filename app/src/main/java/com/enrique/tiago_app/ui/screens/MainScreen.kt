@@ -28,6 +28,9 @@ import com.enrique.tiago_app.ui.logic.StreamViewModel
 import com.enrique.tiago_app.ui.logic.AppScreen
 import com.enrique.tiago_app.ui.logic.PlayMotionViewModel
 import com.enrique.tiago_app.ui.logic.InvestigationViewModel
+import com.enrique.tiago_app.ui.logic.JointControlViewModel // ¡NUEVO! Importa el ViewModel
+import com.enrique.tiago_app.ui.screens.JointControlScreen // ¡NUEVO! Importa la pantalla
+import com.enrique.tiago_app.ui.screens.InvestigationScreen // Asegúrate de tener este import
 import com.enrique.tiago_app.utils.AppConstants
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -37,7 +40,8 @@ fun MainScreen(
     controlViewModel: ControlViewModel,
     streamViewModel: StreamViewModel, // ¡NUEVO! Añadimos el ViewModel del vídeo
     playMotionViewModel: PlayMotionViewModel,
-    investigationViewModel: InvestigationViewModel // ¡NUEVO!
+    investigationViewModel: InvestigationViewModel, // ¡NUEVO!
+    jointControlViewModel: JointControlViewModel
 ) {
     // Observamos en qué pantalla estamos
     val currentScreen by mainViewModel.currentScreen.collectAsState()
@@ -59,6 +63,9 @@ fun MainScreen(
     val hasCameras = robotData?.capabilities?.cameras?.isNotEmpty() == true
 
     val hasPlayMotion = robotData?.capabilities?.hasPlayMotion == true
+
+    // ¡NUEVO! Comprobamos si el URDF nos ha mandado alguna articulación
+    val hasJoints = robotData?.capabilities?.controlableJoints?.isNotEmpty() == true
 
     // ¡CAMBIO! Si salimos de la pantalla de Teleoperación, apagamos la división Y los motores
     LaunchedEffect(currentScreen) {
@@ -146,6 +153,20 @@ fun MainScreen(
                     },
                     modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
                     icon = { Icon(Icons.Default.Info, contentDescription = null) } // Puedes usar un icono de Search o Info
+                )
+
+                // ¡NUEVO! Menú para las Articulaciones
+                NavigationDrawerItem(
+                    label = { Text(if (hasJoints) "Mover Articulaciones" else "Articulaciones (No Disp.)") },
+                    selected = currentScreen == AppScreen.ARTICULACIONES,
+                    onClick = {
+                        if (hasJoints) {
+                            mainViewModel.navigateTo(AppScreen.ARTICULACIONES)
+                            scope.launch { drawerState.close() }
+                        }
+                    },
+                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
+                    badge = { if (!hasJoints) Icon(Icons.Default.Close, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
                 )
 
                 Spacer(Modifier.weight(1f)) // Empuja el botón de desconectar hacia abajo
@@ -289,6 +310,7 @@ fun MainScreen(
                         AppScreen.CAMERA -> StreamView(streamViewModel = streamViewModel, cameraTopics = robotData?.capabilities?.cameraTopics ?: emptyList())
                         AppScreen.PLAY_MOTION -> PlayMotionScreen(viewModel = playMotionViewModel)
                         AppScreen.INVESTIGACION -> InvestigationScreen(viewModel = investigationViewModel) // ¡NUEVO!
+                        AppScreen.ARTICULACIONES -> JointControlScreen(viewModel = jointControlViewModel) // ¡NUEVO! Se pinta aquí
                     }
                 }
             }
