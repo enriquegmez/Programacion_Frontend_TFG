@@ -40,6 +40,7 @@ import com.enrique.tiago_app.protocol.ActionListResult
 import com.enrique.tiago_app.communication.WebSocketClient
 import com.enrique.tiago_app.communication.SessionManager
 import com.enrique.tiago_app.protocol.MessageCodec
+import com.enrique.tiago_app.protocol.NetworkInfoResult
 import com.enrique.tiago_app.protocol.RobotCapabilitiesData
 
 
@@ -75,6 +76,22 @@ class ProtocolDirector(
 
     private val _actionFeedback = MutableSharedFlow<ActionFeedbackPayload>()
     val actionFeedback = _actionFeedback.asSharedFlow()
+
+    // ¡NUEVO! Variables observables para la red
+    private val _rosTopics = MutableStateFlow<Map<String, List<String>>>(emptyMap())
+    val rosTopics: StateFlow<Map<String, List<String>>> = _rosTopics.asStateFlow()
+
+    private val _rosServices = MutableStateFlow<Map<String, List<String>>>(emptyMap())
+    val rosServices: StateFlow<Map<String, List<String>>> = _rosServices.asStateFlow()
+
+    private val _rosActions = MutableStateFlow<Map<String, List<String>>>(emptyMap())
+    val rosActions: StateFlow<Map<String, List<String>>> = _rosActions.asStateFlow()
+
+    fun clearNetworkInfo() {
+        _rosTopics.value = emptyMap()
+        _rosServices.value = emptyMap()
+        _rosActions.value = emptyMap()
+    }
 
     init {
         // 1. Escuchar los mensajes entrantes (El SharedFlow que hiciste)
@@ -217,7 +234,7 @@ class ProtocolDirector(
 
     fun sendJoystickVelocity(v: Float, w: Float) {
         val payload = ControlReqPayload(
-            data = ControlData(v = v, w = w, joints = emptyList())
+            data = ControlData(v = v, w = w)
         )
         dispatchMessage(AppConstants.MsgType.CONTROL_REQ, payload)
     }
@@ -251,7 +268,7 @@ class ProtocolDirector(
     // ¡NUEVO! MÉTODOS DE ACCIONES (PlayMotion)
     // ==========================================
     fun sendQueryActionsReq() {
-        val payload = QueryReqPayload(resourceType = AppConstants.Resource.ACTIONS)
+        val payload = QueryReqPayload(resourceType = AppConstants.Resource.MOVEMENTS)
         dispatchMessage(AppConstants.MsgType.QUERY_REQ, payload)
     }
 
@@ -269,6 +286,41 @@ class ProtocolDirector(
             target = target
         )
         dispatchMessage(AppConstants.MsgType.STOP_ACTION_REQ, payload)
+    }
+
+    // ==========================================
+    // ¡NUEVO! MÉTODOS DE RED Y ARTICULACIONES
+    // ==========================================
+
+    /**
+     * Pide al backend la lista de topics, servicios o acciones.
+     * @param resourceType Debe ser Resource.TOPICS, Resource.SERVICES o Resource.ACTIONS
+     */
+    /**
+     * Pide al backend la lista de topics, servicios o acciones.
+     * @param resourceType Debe ser Resource.TOPICS, Resource.SERVICES o Resource.ACTIONS
+     */
+    fun requestNetworkInfo(resourceType: String) {
+        if (stateManager.globalState.value != AppConstants.GlobalState.SESION_INICIADA) return
+
+        val payload = QueryReqPayload(resourceType = resourceType)
+        dispatchMessage(AppConstants.MsgType.QUERY_REQ, payload)
+    }
+
+    /**
+     * Envía la posición deseada de una articulación (Slider).
+     * No levanta el Watchdog estricto de las ruedas en el backend.
+     */
+    fun sendJointCommand(jointName: String, value: Float) {
+        if (stateManager.movementState.value != AppConstants.MovementState.ENVIANDO_INFO) return
+
+        val payload = ControlReqPayload(
+            data = ControlData(
+                jointName = jointName,
+                jointValue = value
+            )
+        )
+        dispatchMessage(AppConstants.MsgType.CONTROL_REQ, payload)
     }
 
     // ==========================================
@@ -467,14 +519,25 @@ class ProtocolDirector(
 
             if (reqMsg.header.type == AppConstants.MsgType.QUERY_REQ) {
                 val queryResp = respMsg.payload as? QueryRespPayload
+
+                // ¡LA MAGIA! Leemos la petición original que sacamos de pendingRequests
+                val originalReq = reqMsg.payload as? QueryReqPayload
+
                 if (queryResp?.success == true) {
-                    // ¡NUEVO! Evaluamos el tipo de dato recibido usando las clases puras de Kotlin
                     when (val data = queryResp.parsedData) {
                         is RobotInfoResult -> {
                             _robotCapabilities.value = data.info
                         }
                         is ActionListResult -> {
                             _availableActions.value = data.actions
+                        }
+                        is NetworkInfoResult -> {
+                            // Miramos qué recurso habíamos pedido originalmente
+                            when (originalReq?.resourceType) {
+                                AppConstants.Resource.TOPICS -> _rosTopics.value = data.networkData
+                                AppConstants.Resource.SERVICES -> _rosServices.value = data.networkData
+                                AppConstants.Resource.ACTIONS -> _rosActions.value = data.networkData
+                            }
                         }
                         null -> {
                             Log.w(tag, "QueryResp sin datos válidos (No es ni Lista ni Objeto)")

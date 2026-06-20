@@ -27,6 +27,7 @@ import com.enrique.tiago_app.ui.logic.MainViewModel
 import com.enrique.tiago_app.ui.logic.StreamViewModel
 import com.enrique.tiago_app.ui.logic.AppScreen
 import com.enrique.tiago_app.ui.logic.PlayMotionViewModel
+import com.enrique.tiago_app.ui.logic.InvestigationViewModel
 import com.enrique.tiago_app.utils.AppConstants
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -35,7 +36,8 @@ fun MainScreen(
     mainViewModel: MainViewModel,
     controlViewModel: ControlViewModel,
     streamViewModel: StreamViewModel, // ¡NUEVO! Añadimos el ViewModel del vídeo
-    playMotionViewModel: PlayMotionViewModel
+    playMotionViewModel: PlayMotionViewModel,
+    investigationViewModel: InvestigationViewModel // ¡NUEVO!
 ) {
     // Observamos en qué pantalla estamos
     val currentScreen by mainViewModel.currentScreen.collectAsState()
@@ -132,6 +134,18 @@ fun MainScreen(
                     },
                     modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
                     badge = { if (!hasPlayMotion) Icon(Icons.Default.Close, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
+                )
+
+                // ¡NUEVO! Menú Investigación / Debug
+                NavigationDrawerItem(
+                    label = { Text("Investigación (ROS 2)") },
+                    selected = currentScreen == AppScreen.INVESTIGACION, // Asegúrate de añadir esto a tu enum AppScreen
+                    onClick = {
+                        mainViewModel.navigateTo(AppScreen.INVESTIGACION)
+                        scope.launch { drawerState.close() }
+                    },
+                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
+                    icon = { Icon(Icons.Default.Info, contentDescription = null) } // Puedes usar un icono de Search o Info
                 )
 
                 Spacer(Modifier.weight(1f)) // Empuja el botón de desconectar hacia abajo
@@ -274,6 +288,7 @@ fun MainScreen(
                         AppScreen.TELEOP -> JoystickView(controlViewModel = controlViewModel, teleopTopics = robotData?.capabilities?.teleopTopics ?: emptyList())
                         AppScreen.CAMERA -> StreamView(streamViewModel = streamViewModel, cameraTopics = robotData?.capabilities?.cameraTopics ?: emptyList())
                         AppScreen.PLAY_MOTION -> PlayMotionScreen(viewModel = playMotionViewModel)
+                        AppScreen.INVESTIGACION -> InvestigationScreen(viewModel = investigationViewModel) // ¡NUEVO!
                     }
                 }
             }

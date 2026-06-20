@@ -67,7 +67,8 @@ data class ControlModeReqPayload(
 data class ControlData(
     @SerialName("v") val v: Float? = 0.0f,
     @SerialName("w") val w: Float? = 0.0f,
-    @SerialName("joints") val joints: List<Float> = emptyList()
+    @SerialName("joint_name") val jointName: String? = null,
+    @SerialName("joint_value") val jointValue: Float? = null
 )
 
 @Serializable
@@ -111,6 +112,7 @@ class EmptyPayload(): Payload
 sealed interface QueryDataResult
 data class RobotInfoResult(val info: RobotCapabilitiesData) : QueryDataResult
 data class ActionListResult(val actions: List<String>) : QueryDataResult
+data class NetworkInfoResult(val networkData: Map<String, List<String>>) : QueryDataResult
 @Serializable
 data class QueryRespPayload(
     @SerialName("success") val success: Boolean,
@@ -200,8 +202,15 @@ data class CapabilitiesData(
     @SerialName("has_nav") val hasNav: Boolean,
     @SerialName("has_moveit") val hasMoveit: Boolean,
     @SerialName("has_ft_sensor") val hasFtSensor: Boolean,
-    @SerialName("has_play_motion") val hasPlayMotion: Boolean
+    @SerialName("has_play_motion") val hasPlayMotion: Boolean,
+    @SerialName("controlable_joints") val controlableJoints: List<JointLimit>? = null
+)
 
+@Serializable
+data class JointLimit(
+    @SerialName("name") val name: String,
+    @SerialName("min") val min: Float,
+    @SerialName("max") val max: Float
 )
 
 @Serializable

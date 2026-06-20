@@ -93,10 +93,17 @@ object AppConstants {
         const val ROBOT_INFO = "ROBOT_INFO"
         const val TELEOP = "TELEOP"
         const val CAMERAS = "CAMERAS"
+        const val MOVEMENTS = "MOVEMENTS"
         const val TOPICS = "TOPICS"
-        const val SENSORS = "SENSORS"
+        const val SERVICES = "SERVICES"
         const val ACTIONS = "ACTIONS"
     }
+    // ¡NUEVO! Tipos para el ControlModeReq
+    object ControlType {
+        const val TELEOP = "TELEOP"
+        const val JOINT = "JOINT"
+    }
+
 
     // ¡NUEVO! Tipos de acciones para ActionReq
     object ActionType {

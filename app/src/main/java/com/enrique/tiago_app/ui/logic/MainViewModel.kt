@@ -20,7 +20,8 @@ enum class AppScreen {
     DASHBOARD,    // La pantalla en blanco por defecto
     TELEOP,       // Tu joystick
     CAMERA,        // La nueva pantalla de cámara
-    PLAY_MOTION
+    PLAY_MOTION,
+    INVESTIGACION
 }
 
 /**

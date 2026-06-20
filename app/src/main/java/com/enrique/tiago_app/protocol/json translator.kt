@@ -53,11 +53,19 @@ class MessageCodec {
                             // 1. Decodificamos la parte genérica (success, code, details)
                             val resp = jsonFormat.decodeFromJsonElement<QueryRespPayload>(payloadJson)
 
-                            // 2. ¡MAGIA! Inspeccionamos el campo "data" aquí mismo
+                            // 2. ¡MAGIA DETECTIVE! Inspeccionamos el campo "data" aquí mismo
                             val dataElement = payloadJson.jsonObject["data"]
                             resp.parsedData = when (dataElement) {
-                                is JsonObject -> RobotInfoResult(jsonFormat.decodeFromJsonElement(dataElement))
                                 is JsonArray -> ActionListResult(jsonFormat.decodeFromJsonElement(dataElement))
+                                is JsonObject -> {
+                                    // Comprobamos si tiene las claves típicas de la radiografía
+                                    if (dataElement.containsKey("capabilities") || dataElement.containsKey("identity") || dataElement.containsKey("status")) {
+                                        RobotInfoResult(jsonFormat.decodeFromJsonElement(dataElement))
+                                    } else {
+                                        // Si no las tiene, asumimos que es nuestro nuevo mapa de red Map<String, List<String>>
+                                        NetworkInfoResult(jsonFormat.decodeFromJsonElement(dataElement))
+                                    }
+                                }
                                 else -> null
                             }
                             resp // Devolvemos el objeto ya traducido a puro Kotlin

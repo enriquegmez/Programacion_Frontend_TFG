@@ -32,6 +32,7 @@ import com.enrique.tiago_app.ui.logic.MainViewModel
 import com.enrique.tiago_app.ui.logic.ControlViewModel
 import com.enrique.tiago_app.ui.logic.StreamViewModel // ¡NUEVO IMPORT!
 import com.enrique.tiago_app.ui.logic.PlayMotionViewModel
+import com.enrique.tiago_app.ui.logic.InvestigationViewModel
 
 // --- IMPORTS DE TUS PANTALLAS (SCREENS) ---
 import com.enrique.tiago_app.ui.screens.WebsocketScreen
@@ -102,6 +103,11 @@ fun AppNavigation() {
     // ¡NUEVO! Instanciamos el cerebro de las acciones predefinidas
     val playMotionViewModel: PlayMotionViewModel = viewModel {
         PlayMotionViewModel(AppDependencies.director)
+    }
+
+    // ¡NUEVO! Instanciamos el cerebro de la investigación
+    val investigationViewModel: InvestigationViewModel = viewModel {
+        InvestigationViewModel(AppDependencies.director)
     }
 
     // Observamos el semáforo global para movernos entre pantallas
@@ -181,7 +187,8 @@ fun AppNavigation() {
                 controlViewModel = controlViewModel,
                 mainViewModel = mainViewModel,
                 streamViewModel = streamViewModel,
-                playMotionViewModel = playMotionViewModel
+                playMotionViewModel = playMotionViewModel,
+                investigationViewModel = investigationViewModel
             )
         }
     }
