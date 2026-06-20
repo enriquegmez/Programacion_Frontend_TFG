@@ -36,16 +36,21 @@ class ProtocolStateManager {
     private val _monitorState = MutableStateFlow(AppConstants.MonitorState.IDLE)
     val monitorState: StateFlow<String> = _monitorState.asStateFlow()
     // Estado para avisos emergentes (Alertas al usuario)
-    private val _systemAlert = MutableStateFlow<String?>(null)
+    // 1. ¡NUEVO! Estructura para guardar el título y el mensaje juntos
+    data class AlertData(val title: String, val message: String)
 
-    val systemAlert: StateFlow<String?> = _systemAlert.asStateFlow()
+    // 2. Cambiamos el tipo de String? a AlertData?
+    private val _systemAlert = MutableStateFlow<AlertData?>(null)
+    val systemAlert: StateFlow<AlertData?> = _systemAlert.asStateFlow()
 
     fun clearSystemAlert() {
         _systemAlert.value = null
     }
 
-    fun showSystemAlert(message: String) {
-        _systemAlert.value = message
+    // 3. ¡EL TRUCO! Le damos un valor por defecto al título.
+    // Así no tienes que cambiar el resto de tu código.
+    fun showSystemAlert(message: String, title: String = "Aviso de Desconexión") {
+        _systemAlert.value = AlertData(title, message)
     }
 
     // ==========================================
@@ -193,7 +198,7 @@ class ProtocolStateManager {
             if (respMsg.payload.type == AppConstants.AsyncNotify.TYPE_EMERGENCY_STOP &&
                 respMsg.payload.details == AppConstants.AsyncNotify.DETAILS_ROBOT_LOST) {
                 // 📢 Lanzamos el aviso para la interfaz gráfica
-                _systemAlert.value = "⚠️ Se ha perdido la conexión con el robot físico o los nodos ROS 2 se han caído. Parada de emergencia activada."
+                showSystemAlert("⚠️ Se ha perdido la conexión con el robot físico o los nodos ROS 2 se han caído. Parada de emergencia activada.")
                 triggerSessionReset()
             }
             return true
@@ -301,9 +306,15 @@ class ProtocolStateManager {
                 // ¡AQUÍ ESTÁ EL TEXTO CORRECTO!
                 val detailsStr = actionFeedback?.details ?: ""
                 if (detailsStr.contains("detenida", ignoreCase = true)) {
-                    showSystemAlert("El movimiento se ha detenido correctamente.")
+                    showSystemAlert(
+                        message = "El movimiento se ha detenido correctamente.",
+                        title = "Movimiento Terminado" // ¡Título personalizado!
+                    )
                 } else {
-                    showSystemAlert("¡Éxito!\n\nEl movimiento se ha completado correctamente.")
+                    showSystemAlert(
+                        message = "¡Éxito!\n\nEl movimiento se ha completado correctamente.",
+                        title = "Movimiento Terminado" // ¡Título personalizado!
+                    )
                 }
             }
 

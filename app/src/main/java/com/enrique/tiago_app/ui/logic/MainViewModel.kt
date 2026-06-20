@@ -113,7 +113,7 @@ class MainViewModel(
     val globalState: StateFlow<String> = director.stateManager.globalState
 
     // ¡NUEVO! Observamos las alertas del sistema (Desconexiones de emergencia)
-    val systemAlert: StateFlow<String?> = director.stateManager.systemAlert
+    val systemAlert = director.stateManager.systemAlert
 
     // ¡NUEVO! Pasillo directo hacia la radiografía del robot.
     // Jetpack Compose leerá esto para pintar los menús o deshabilitar botones.

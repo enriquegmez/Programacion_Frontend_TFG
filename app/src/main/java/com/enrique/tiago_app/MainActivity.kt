@@ -146,12 +146,12 @@ fun AppNavigation() {
         }
     }
 
-    // ¡NUEVO! Lógica Visual del Dialogo de Alerta
+    // Lógica Visual del Dialogo de Alerta
     if (systemAlert != null) {
         AlertDialog(
-            onDismissRequest = { mainViewModel.clearAlert() }, // Cierra si se toca fuera
-            title = { Text("Aviso de Desconexión") },
-            text = { Text(systemAlert!!) },
+            onDismissRequest = { mainViewModel.clearAlert() },
+            title = { Text(systemAlert!!.title) },     // ¡NUEVO! Lee el título dinámico
+            text = { Text(systemAlert!!.message) },    // ¡NUEVO! Lee el mensaje
             confirmButton = {
                 Button(onClick = { mainViewModel.clearAlert() }) {
                     Text("Entendido")

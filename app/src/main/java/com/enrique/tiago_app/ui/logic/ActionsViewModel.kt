@@ -53,10 +53,18 @@ class PlayMotionViewModel(
             }
         }
 
-        // Limpieza automática: Si el robot vuelve a IDLE (terminó la acción o se paró),
-        // mantenemos el feedback unos segundos para que el usuario lea "Completado"
-        // pero reseteamos la acción seleccionada si queremos.
-        // Por ahora lo dejamos simple y dejamos que la UI decida qué mostrar.
+        // ==========================================
+        // ¡NUEVO! EL LIMPIAPARABRISAS
+        // Si el Director vacía la lista (por una desconexión),
+        // nosotros soltamos la acción seleccionada y borramos la barra de carga.
+        // ==========================================
+        viewModelScope.launch {
+            availableActions.collect { actions ->
+                if (actions.isEmpty()) {
+                    clearSelection()
+                }
+            }
+        }
     }
 
 

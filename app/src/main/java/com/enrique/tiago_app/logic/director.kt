@@ -196,6 +196,7 @@ class ProtocolDirector(
     // ¡NUEVO! Limpia la memoria del robot cuando nos desconectamos
     fun clearRobotCapabilities() {
         _robotCapabilities.value = null
+        _availableActions.value = emptyList()
     }
 
     fun sendStartMovement(customTopic: String) {
