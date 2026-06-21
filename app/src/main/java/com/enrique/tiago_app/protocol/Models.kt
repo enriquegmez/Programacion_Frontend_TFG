@@ -85,7 +85,8 @@ data class StreamReqPayload(
 
 @Serializable
 data class StopStreamReqPayload(
-    @SerialName("resource") val resource: String
+    @SerialName("resource") val resource: String,
+    @SerialName("topic") val topic: String? = null // ¡NUEVO! Para poder parar un sensor específico
 ): Payload
 
 @Serializable
@@ -113,6 +114,7 @@ sealed interface QueryDataResult
 data class RobotInfoResult(val info: RobotCapabilitiesData) : QueryDataResult
 data class ActionListResult(val actions: List<String>) : QueryDataResult
 data class NetworkInfoResult(val networkData: Map<String, List<String>>) : QueryDataResult
+data class SensorListResult(val sensors: List<SensorInfo>) : QueryDataResult // ¡NUEVO!
 @Serializable
 data class QueryRespPayload(
     @SerialName("success") val success: Boolean,
@@ -150,7 +152,11 @@ data class StreamRespPayload(
     @SerialName("resp_data") val respData: JsonObject? = null,
     @SerialName("stream_data") val streamData: JsonObject? = null,
     @SerialName("stream_url") val streamUrl: String? = null
-): Payload
+): Payload {
+    // ¡NUEVO! Variable oculta que rellenará el traductor con clases puras de Kotlin
+    @Transient
+    var parsedSensorData: SensorStreamData? = null
+}
 
 @Serializable
 data class GenericRespPayload(
@@ -217,4 +223,69 @@ data class JointLimit(
 @Serializable
 data class CameraDevice(
     @SerialName("name") val name: String
+)
+
+// ==========================================
+// MODELOS PARA LOS SENSORES Y EL STREAMING
+// ==========================================
+
+@Serializable
+data class SensorInfo(
+    @SerialName("topic") val topic: String,
+    @SerialName("type") val type: String
+)
+
+// Interfaz pura para agrupar los datos de los sensores
+sealed interface SensorData
+
+@Serializable
+data class LaserScanData(
+    @SerialName("angle_min") val angleMin: Float,
+    @SerialName("angle_max") val angleMax: Float,
+    @SerialName("angle_increment") val angleIncrement: Float,
+    @SerialName("range_min") val rangeMin: Float,
+    @SerialName("range_max") val rangeMax: Float,
+    @SerialName("ranges") val ranges: List<Float>
+) : SensorData
+
+@Serializable
+data class ImuData(
+    @SerialName("orientation") val orientation: Vector4,
+    @SerialName("angular_velocity") val angularVelocity: Vector3,
+    @SerialName("linear_acceleration") val linearAcceleration: Vector3
+) : SensorData
+
+@Serializable
+data class Vector3(@SerialName("x") val x: Float, @SerialName("y") val y: Float, @SerialName("z") val z: Float)
+@Serializable
+data class Vector4(@SerialName("x") val x: Float, @SerialName("y") val y: Float, @SerialName("z") val z: Float, @SerialName("w") val w: Float)
+
+@Serializable
+data class BatterySensorData(
+    @SerialName("voltage") val voltage: Float,
+    @SerialName("percentage") val percentage: Float,
+    @SerialName("power_supply_status") val powerSupplyStatus: Int
+) : SensorData
+
+@Serializable
+data class RangeSensorData(
+    @SerialName("range") val range: Float,
+    @SerialName("min_range") val minRange: Float,
+    @SerialName("max_range") val maxRange: Float,
+    @SerialName("field_of_view") val fieldOfView: Float
+) : SensorData
+
+@Serializable
+data class PointCloud2Data(
+    @SerialName("width") val width: Int,
+    @SerialName("height") val height: Int,
+    @SerialName("is_dense") val isDense: Boolean,
+    @SerialName("note") val note: String
+) : SensorData
+
+// El objeto final que leerá el ViewModel (¡100% Kotlin puro!)
+data class SensorStreamData(
+    val topic: String,
+    val type: String,
+    val data: SensorData
 )

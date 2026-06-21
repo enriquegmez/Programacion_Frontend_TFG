@@ -35,6 +35,9 @@ import com.enrique.tiago_app.protocol.StopActionReqPayload
 import com.enrique.tiago_app.protocol.ActionFeedbackPayload
 import com.enrique.tiago_app.protocol.RobotInfoResult
 import com.enrique.tiago_app.protocol.ActionListResult
+import com.enrique.tiago_app.protocol.SensorInfo
+import com.enrique.tiago_app.protocol.SensorStreamData
+import com.enrique.tiago_app.protocol.SensorListResult
 
 // IMPORTS DE TU CAPA DE COMUNICACIÓN (Asegúrate de que la ruta es correcta)
 import com.enrique.tiago_app.communication.WebSocketClient
@@ -87,10 +90,23 @@ class ProtocolDirector(
     private val _rosActions = MutableStateFlow<Map<String, List<String>>>(emptyMap())
     val rosActions: StateFlow<Map<String, List<String>>> = _rosActions.asStateFlow()
 
+    // ¡NUEVO! Variables observables para los Sensores
+    private val _availableSensors = MutableStateFlow<List<SensorInfo>>(emptyList())
+    val availableSensors: StateFlow<List<SensorInfo>> = _availableSensors.asStateFlow()
+
+    // Un mapa en tiempo real. Clave: topic ("/scan"). Valor: Los datos puros de Kotlin
+    private val _activeSensorData = MutableStateFlow<Map<String, SensorStreamData>>(emptyMap())
+    val activeSensorData: StateFlow<Map<String, SensorStreamData>> = _activeSensorData.asStateFlow()
+
     fun clearNetworkInfo() {
         _rosTopics.value = emptyMap()
         _rosServices.value = emptyMap()
         _rosActions.value = emptyMap()
+    }
+
+    fun clearSensorData() {
+        _availableSensors.value = emptyList()
+        _activeSensorData.value = emptyMap()
     }
 
     init {
@@ -175,6 +191,7 @@ class ProtocolDirector(
         scope.launch {
             webSocketClient.disconnect()
             sessionManager.clearSession()
+            clearSensorData()
         }
     }
 
@@ -287,6 +304,33 @@ class ProtocolDirector(
             target = target
         )
         dispatchMessage(AppConstants.MsgType.STOP_ACTION_REQ, payload)
+    }
+
+    // ==========================================
+    // ¡NUEVO! MÉTODOS DE SENSORES
+    // ==========================================
+    fun sendQuerySensorsReq() {
+        val payload = QueryReqPayload(resourceType = AppConstants.Resource.SENSORS)
+        dispatchMessage(AppConstants.MsgType.QUERY_REQ, payload)
+    }
+
+    fun sendStartSensorStream(topic: String) {
+        val payload = StreamReqPayload(
+            resource = AppConstants.Resource.SENSORS,
+            topic = topic
+        )
+        dispatchMessage(AppConstants.MsgType.STREAM_REQ, payload)
+    }
+
+    fun sendStopSensorStream(topic: String) {
+        val payload = StopStreamReqPayload(
+            resource = AppConstants.Resource.SENSORS,
+            topic = topic
+        )
+        dispatchMessage(AppConstants.MsgType.STOP_STREAM_REQ, payload)
+
+        // Lo borramos de nuestro mapa local para que la gráfica desaparezca al instante
+        _activeSensorData.value = _activeSensorData.value - topic
     }
 
     // ==========================================
@@ -487,25 +531,38 @@ class ProtocolDirector(
         }
 
         // ==========================================
-        // 5. ¡LÓGICA REFINADA PARA EL ACTION FEEDBACK!
+        // 5. ¡LÓGICA REFINADA PARA EL FEEDBACK CONTINUO Y SENSORES!
         // ==========================================
-        if (respMsg.header.type == AppConstants.MsgType.RESP && respMsg.payload is ActionFeedbackPayload) {
+        if (respMsg.header.type == AppConstants.MsgType.RESP) {
 
-            // 5.1. Emitimos inmediatamente el progreso a la UI (Barra de carga, etc.)
-            scope.launch {
-                _actionFeedback.emit(respMsg.payload)
+            // 5.1. Feedback de Movimientos
+            if (respMsg.payload is ActionFeedbackPayload) {
+                scope.launch { _actionFeedback.emit(respMsg.payload) }
+                val originalOrDummyReq = reqMsg ?: RobotMessage(
+                    header = MessageHeader(respMsg.header.msgId, AppConstants.MsgType.ACTION_REQ, "", 0.0),
+                    payload = EmptyPayload()
+                )
+                commitAndCheckSync(originalOrDummyReq, respMsg)
+                return
             }
 
-            // 5.2. Determinamos qué darle al Semáforo
-            // Si reqMsg NO es nulo, significa que es la PRIMERA respuesta (Hemos salvado el timeout)
-            // Si reqMsg ES nulo, es un feedback continuo (ej: 20%, 50%), creamos la petición fantasma
-            val originalOrDummyReq = reqMsg ?: RobotMessage(
-                header = MessageHeader(respMsg.header.msgId, AppConstants.MsgType.ACTION_REQ, "", 0.0),
-                payload = EmptyPayload()
-            )
+            // 5.2. ¡NUEVO! Lluvia de datos de Sensores
+            val streamResp = respMsg.payload as? StreamRespPayload
+            if (streamResp != null && streamResp.parsedSensorData != null) {
+                val newData = streamResp.parsedSensorData!!
 
-            commitAndCheckSync(originalOrDummyReq, respMsg)
-            return // Salimos porque la acción ya ha sido procesada
+                // Actualizamos el mapa inmutable. (Compose lo detectará y redibujará la gráfica)
+                _activeSensorData.value = _activeSensorData.value + (newData.topic to newData)
+
+                // Creamos la petición fantasma (pero con sus datos reales) para que la máquina
+                // de estados pueda leer el "topic" y sepa mantener el semáforo encendido.
+                val originalOrDummyReq = reqMsg ?: RobotMessage(
+                    header = MessageHeader(respMsg.header.msgId, AppConstants.MsgType.STREAM_REQ, "", 0.0),
+                    payload = StreamReqPayload(resource = AppConstants.Resource.SENSORS, topic = newData.topic)
+                )
+                commitAndCheckSync(originalOrDummyReq, respMsg)
+                return // Salimos porque el dato ya está publicado
+            }
         }
 
         // 6. RESPUESTAS NORMALES (Las que solo responden una vez)
@@ -537,6 +594,8 @@ class ProtocolDirector(
                         is ActionListResult -> {
                             _availableActions.value = data.actions
                         }
+                        // ¡NUEVO! Guardar el menú de sensores
+                        is SensorListResult -> _availableSensors.value = data.sensors
                         is NetworkInfoResult -> {
                             // Miramos qué recurso habíamos pedido originalmente
                             when (originalReq?.resourceType) {

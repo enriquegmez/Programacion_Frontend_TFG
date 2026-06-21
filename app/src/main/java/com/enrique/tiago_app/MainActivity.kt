@@ -34,6 +34,7 @@ import com.enrique.tiago_app.ui.logic.StreamViewModel // ¡NUEVO IMPORT!
 import com.enrique.tiago_app.ui.logic.PlayMotionViewModel
 import com.enrique.tiago_app.ui.logic.InvestigationViewModel
 import com.enrique.tiago_app.ui.logic.JointControlViewModel
+import com.enrique.tiago_app.ui.logic.SensorViewModel
 
 // --- IMPORTS DE TUS PANTALLAS (SCREENS) ---
 import com.enrique.tiago_app.ui.screens.WebsocketScreen
@@ -115,6 +116,11 @@ fun AppNavigation() {
         JointControlViewModel(AppDependencies.director)
     }
 
+    val sensorViewModel: SensorViewModel = viewModel {
+        SensorViewModel(AppDependencies.director)
+    }
+
+
     // Observamos el semáforo global para movernos entre pantallas
     val globalState by mainViewModel.globalState.collectAsState()
 
@@ -194,7 +200,8 @@ fun AppNavigation() {
                 streamViewModel = streamViewModel,
                 playMotionViewModel = playMotionViewModel,
                 investigationViewModel = investigationViewModel,
-                jointControlViewModel = jointControlViewModel
+                jointControlViewModel = jointControlViewModel,
+                sensorViewModel = sensorViewModel
             )
         }
     }

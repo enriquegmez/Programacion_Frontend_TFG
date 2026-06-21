@@ -97,7 +97,18 @@ object AppConstants {
         const val TOPICS = "TOPICS"
         const val SERVICES = "SERVICES"
         const val ACTIONS = "ACTIONS"
+        const val SENSORS = "SENSORS" // ¡NUEVO!
     }
+
+    // ¡NUEVO! Tipos de sensores que nuestra app sabe dibujar
+    object SensorType {
+        const val LASER_SCAN = "LaserScan"
+        const val IMU = "Imu"
+        const val BATTERY = "BatteryState"
+        const val RANGE = "Range"
+        const val POINT_CLOUD2 = "PointCloud2"
+    }
+
     // ¡NUEVO! Tipos para el ControlModeReq
     object ControlType {
         const val TELEOP = "TELEOP"

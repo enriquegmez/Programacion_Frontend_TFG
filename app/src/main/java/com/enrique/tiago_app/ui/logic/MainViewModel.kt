@@ -22,7 +22,8 @@ enum class AppScreen {
     CAMERA,        // La nueva pantalla de cámara
     PLAY_MOTION,
     INVESTIGACION,
-    ARTICULACIONES
+    ARTICULACIONES,
+    SENSORES
 }
 
 /**

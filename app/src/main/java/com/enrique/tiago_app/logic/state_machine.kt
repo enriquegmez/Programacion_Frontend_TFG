@@ -15,6 +15,9 @@ import com.enrique.tiago_app.protocol.QueryRespPayload
 import com.enrique.tiago_app.protocol.ActionFeedbackPayload
 import com.enrique.tiago_app.protocol.StreamRespPayload
 import com.enrique.tiago_app.protocol.QueryReqPayload
+import com.enrique.tiago_app.protocol.StopStreamReqPayload
+import com.enrique.tiago_app.protocol.StreamReqPayload
+
 
 /**
  * ProtocolStateManager
@@ -42,6 +45,9 @@ class ProtocolStateManager {
     // 2. Cambiamos el tipo de String? a AlertData?
     private val _systemAlert = MutableStateFlow<AlertData?>(null)
     val systemAlert: StateFlow<AlertData?> = _systemAlert.asStateFlow()
+
+    // ¡NUEVO! Memoria para saber qué streams exactos están abiertos
+    private val activeStreams = mutableSetOf<String>()
 
     fun clearSystemAlert() {
         _systemAlert.value = null
@@ -127,8 +133,9 @@ class ProtocolStateManager {
                             return Pair(false, "Comando denegado. El estado actual es IDLE (No hay stream que detener).")
                         }
                         AppConstants.MonitorState.RECIBIENDO_STREAM -> {
-                            if (type == AppConstants.MsgType.STOP_STREAM_REQ) return Pair(true, "")
-                            return Pair(false, "Comando denegado. El estado actual es RECIBIENDO_STREAM.")
+                            // ¡AQUÍ ESTÁ LA MAGIA! Permitimos parar streams Y arrancar otros nuevos a la vez.
+                            if (type == AppConstants.MsgType.STOP_STREAM_REQ || type == AppConstants.MsgType.STREAM_REQ) return Pair(true, "")
+                            return Pair(false, "Comando denegado en RECIBIENDO_STREAM.")
                         }
                         else -> return Pair(false, "Estado de monitorización no válido para envío.")
                     }
@@ -387,41 +394,67 @@ class ProtocolStateManager {
         }
 
         // ==========================================
-        // ¡NUEVO! Respuestas de Vídeo
+        // ¡NUEVO! Respuestas de Vídeo y Sensores
         // ==========================================
         else if (reqMsg.header.type == AppConstants.MsgType.STREAM_REQ) {
-            if (_monitorState.value != AppConstants.MonitorState.ESPERANDO_RECIBIR_STREAM) return false
-            // 1. Comprobamos que el payload es del tipo correcto
+            // Permitimos recibir datos tanto si estamos esperando el primer paquete, como si ya estamos recibiendo flujo continuo
+            if (_monitorState.value != AppConstants.MonitorState.ESPERANDO_RECIBIR_STREAM &&
+                _monitorState.value != AppConstants.MonitorState.RECIBIENDO_STREAM) return false
+
             val streamPayload = respMsg.payload as? StreamRespPayload
             val isCorrectPayload = streamPayload != null
 
-            // 2. ¡NUEVO! Si dicen que hay éxito, exigimos que la URL no sea nula
+            // Comprobamos si nos mandan URL (Cámara) o si es un flujo de datos (Sensores)
             val hasValidUrl = streamPayload?.streamUrl != null
-            if (success && isCorrectPayload && hasValidUrl) {
+            val isSensorData = streamPayload?.streamData != null || (reqMsg.payload as? StreamReqPayload)?.resource?.uppercase() == AppConstants.Resource.SENSORS
+
+            if (success && isCorrectPayload && (hasValidUrl || isSensorData)) {
+                // Guardamos en memoria qué stream se ha abierto (usando el Request)
+                val reqPayload = reqMsg.payload as? StreamReqPayload
+                val streamId = reqPayload?.topic ?: reqPayload?.resource ?: "unknown"
+                activeStreams.add(streamId)
+
                 transitionMonitor(AppConstants.MonitorState.RECIBIENDO_STREAM)
             } else {
-                transitionMonitor(AppConstants.MonitorState.IDLE)
+                // Si falla y no quedan otros streams vivos, volvemos a IDLE
+                if (activeStreams.isEmpty()) {
+                    transitionMonitor(AppConstants.MonitorState.IDLE)
+                } else {
+                    transitionMonitor(AppConstants.MonitorState.RECIBIENDO_STREAM)
+                }
+
                 val errorReason = if (!isCorrectPayload) {
                     "El servidor respondió con un formato incorrecto."
-                } else if (success) {
-                    "El servidor indicó éxito pero no proporcionó ninguna URL."
+                } else if (success && !hasValidUrl && !isSensorData) {
+                    "El servidor indicó éxito pero no proporcionó datos ni URL."
                 } else {
-                    streamPayload.details ?: "Error desconocido al contactar con la cámara."
+                    streamPayload?.details ?: "Error desconocido al contactar con el sensor."
                 }
-                showSystemAlert("Error de vídeo: $errorReason")
+                showSystemAlert("Error de Monitorización: $errorReason")
             }
             return true
         }
         else if (reqMsg.header.type == AppConstants.MsgType.STOP_STREAM_REQ) {
             if (_monitorState.value != AppConstants.MonitorState.ESPERANDO_DEJAR_DE_RECIBIR_STREAM) return false
-            val isCorrectPayload = respMsg.payload is GenericRespPayload // ¡ESCUDO!
+            val isCorrectPayload = respMsg.payload is GenericRespPayload
+
             if (success && isCorrectPayload) {
-                transitionMonitor(AppConstants.MonitorState.IDLE)
+                // Borramos este stream de la memoria
+                val reqPayload = reqMsg.payload as StopStreamReqPayload
+                val streamId = reqPayload.topic ?: reqPayload.resource
+                activeStreams.remove(streamId)
+
+                // ¡TU REGLA EXACTA! Solo volvemos a IDLE si ya no queda ningún sensor ni cámara encendida
+                if (activeStreams.isEmpty()) {
+                    transitionMonitor(AppConstants.MonitorState.IDLE)
+                } else {
+                    transitionMonitor(AppConstants.MonitorState.RECIBIENDO_STREAM)
+                }
             } else {
                 transitionMonitor(AppConstants.MonitorState.RECIBIENDO_STREAM)
                 val errorReason = if (!isCorrectPayload) "Formato incorrecto."
                 else (respMsg.payload as? GenericRespPayload)?.details ?: "Error interno."
-                showSystemAlert("No se pudo detener el vídeo: $errorReason")
+                showSystemAlert("No se pudo detener el sensor/vídeo: $errorReason")
             }
             return true
         }
@@ -439,6 +472,7 @@ class ProtocolStateManager {
         transitionGlobal(AppConstants.GlobalState.CONEXION_BACKEND)
         transitionMovement(AppConstants.MovementState.IDLE)
         transitionMonitor(AppConstants.MonitorState.IDLE)
+        activeStreams.clear()
     }
 
     // Llamado si se corta el WebSocket o hacemos 'END'
@@ -447,6 +481,7 @@ class ProtocolStateManager {
         transitionGlobal(AppConstants.GlobalState.IDLE)
         transitionMovement(AppConstants.MovementState.IDLE)
         transitionMonitor(AppConstants.MonitorState.IDLE)
+        activeStreams.clear()
     }
 
     // ==========================================

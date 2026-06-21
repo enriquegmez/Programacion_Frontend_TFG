@@ -50,28 +50,60 @@ class MessageCodec {
                     val respType = payloadJson.jsonObject["resp_type"]?.jsonPrimitive?.content
                     when (respType) {
                         AppConstants.RespType.QUERY_RESP -> {
-                            // 1. Decodificamos la parte genérica (success, code, details)
                             val resp = jsonFormat.decodeFromJsonElement<QueryRespPayload>(payloadJson)
-
-                            // 2. ¡MAGIA DETECTIVE! Inspeccionamos el campo "data" aquí mismo
                             val dataElement = payloadJson.jsonObject["data"]
+
                             resp.parsedData = when (dataElement) {
-                                is JsonArray -> ActionListResult(jsonFormat.decodeFromJsonElement(dataElement))
+                                is JsonArray -> {
+                                    // Si está vacío o el primer elemento es un texto simple, es ActionList
+                                    if (dataElement.isEmpty() || dataElement[0] is JsonPrimitive) {
+                                        ActionListResult(jsonFormat.decodeFromJsonElement(dataElement))
+                                    } else {
+                                        // Si es un objeto complejo, es el menú de Sensores
+                                        SensorListResult(jsonFormat.decodeFromJsonElement(dataElement))
+                                    }
+                                }
                                 is JsonObject -> {
-                                    // Comprobamos si tiene las claves típicas de la radiografía
                                     if (dataElement.containsKey("capabilities") || dataElement.containsKey("identity") || dataElement.containsKey("status")) {
                                         RobotInfoResult(jsonFormat.decodeFromJsonElement(dataElement))
                                     } else {
-                                        // Si no las tiene, asumimos que es nuestro nuevo mapa de red Map<String, List<String>>
                                         NetworkInfoResult(jsonFormat.decodeFromJsonElement(dataElement))
                                     }
                                 }
                                 else -> null
                             }
-                            resp // Devolvemos el objeto ya traducido a puro Kotlin
+                            resp
                         }
                         AppConstants.RespType.ACTION_FEEDBACK -> jsonFormat.decodeFromJsonElement<ActionFeedbackPayload>(payloadJson)
-                        AppConstants.RespType.STREAM_RESP -> jsonFormat.decodeFromJsonElement<StreamRespPayload>(payloadJson)
+
+                        AppConstants.RespType.STREAM_RESP -> {
+                            val resp = jsonFormat.decodeFromJsonElement<StreamRespPayload>(payloadJson)
+
+                            // EL TRADUCTOR DE SENSORES (Aislando la lógica JSON)
+                            val rawStream = resp.streamData
+                            if (rawStream != null) {
+                                val topic = rawStream["topic"]?.jsonPrimitive?.content ?: ""
+                                val type = rawStream["type"]?.jsonPrimitive?.content ?: ""
+                                val rawDataObj = rawStream["data"]
+
+                                if (rawDataObj != null) {
+                                    val parsedSensor: SensorData? = when (type) {
+                                        AppConstants.SensorType.LASER_SCAN -> jsonFormat.decodeFromJsonElement<LaserScanData>(rawDataObj)
+                                        AppConstants.SensorType.IMU -> jsonFormat.decodeFromJsonElement<ImuData>(rawDataObj)
+                                        AppConstants.SensorType.BATTERY -> jsonFormat.decodeFromJsonElement<BatterySensorData>(rawDataObj)
+                                        AppConstants.SensorType.RANGE -> jsonFormat.decodeFromJsonElement<RangeSensorData>(rawDataObj)
+                                        AppConstants.SensorType.POINT_CLOUD2 -> jsonFormat.decodeFromJsonElement<PointCloud2Data>(rawDataObj)
+                                        else -> null
+                                    }
+
+                                    if (parsedSensor != null) {
+                                        // Guardamos el objeto 100% puro Kotlin en el Transient
+                                        resp.parsedSensorData = SensorStreamData(topic, type, parsedSensor)
+                                    }
+                                }
+                            }
+                            resp
+                        }
                         else -> jsonFormat.decodeFromJsonElement<GenericRespPayload>(payloadJson)
                     }
                 }

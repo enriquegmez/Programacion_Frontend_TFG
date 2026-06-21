@@ -29,6 +29,7 @@ import com.enrique.tiago_app.ui.logic.AppScreen
 import com.enrique.tiago_app.ui.logic.PlayMotionViewModel
 import com.enrique.tiago_app.ui.logic.InvestigationViewModel
 import com.enrique.tiago_app.ui.logic.JointControlViewModel // ¡NUEVO! Importa el ViewModel
+import com.enrique.tiago_app.ui.logic.SensorViewModel
 import com.enrique.tiago_app.ui.screens.JointControlScreen // ¡NUEVO! Importa la pantalla
 import com.enrique.tiago_app.ui.screens.InvestigationScreen // Asegúrate de tener este import
 import com.enrique.tiago_app.utils.AppConstants
@@ -41,7 +42,8 @@ fun MainScreen(
     streamViewModel: StreamViewModel, // ¡NUEVO! Añadimos el ViewModel del vídeo
     playMotionViewModel: PlayMotionViewModel,
     investigationViewModel: InvestigationViewModel, // ¡NUEVO!
-    jointControlViewModel: JointControlViewModel
+    jointControlViewModel: JointControlViewModel,
+    sensorViewModel: SensorViewModel
 ) {
     // Observamos en qué pantalla estamos
     val currentScreen by mainViewModel.currentScreen.collectAsState()
@@ -167,6 +169,17 @@ fun MainScreen(
                     },
                     modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
                     badge = { if (!hasJoints) Icon(Icons.Default.Close, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
+                )
+
+                NavigationDrawerItem(
+                    label = { Text("Telemetría (Sensores)") },
+                    selected = currentScreen == AppScreen.SENSORES,
+                    onClick = {
+                        mainViewModel.navigateTo(AppScreen.SENSORES)
+                        scope.launch { drawerState.close() }
+                    },
+                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
+                    icon = { Icon(Icons.Default.Info, contentDescription = null) } // Puedes usar el icono Info o buscar uno de gráfica (Icons.Default.Analytics si lo tienes)
                 )
 
                 Spacer(Modifier.weight(1f)) // Empuja el botón de desconectar hacia abajo
@@ -311,6 +324,7 @@ fun MainScreen(
                         AppScreen.PLAY_MOTION -> PlayMotionScreen(viewModel = playMotionViewModel)
                         AppScreen.INVESTIGACION -> InvestigationScreen(viewModel = investigationViewModel) // ¡NUEVO!
                         AppScreen.ARTICULACIONES -> JointControlScreen(viewModel = jointControlViewModel) // ¡NUEVO! Se pinta aquí
+                        AppScreen.SENSORES -> SensorScreen(viewModel = sensorViewModel) // ¡NUEVO! Se pinta aquí
                     }
                 }
             }
