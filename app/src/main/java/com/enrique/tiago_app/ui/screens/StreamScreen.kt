@@ -55,6 +55,15 @@ fun StreamView(
         }
     }
 
+    // ==========================================
+    // ¡NUEVO! APAGADO AUTOMÁTICO AL SALIR
+    // ==========================================
+    DisposableEffect(Unit) {
+        onDispose {
+            streamViewModel.onScreenDisposed()
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()

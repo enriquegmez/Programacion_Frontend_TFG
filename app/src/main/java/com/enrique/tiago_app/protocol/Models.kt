@@ -283,6 +283,40 @@ data class PointCloud2Data(
     @SerialName("note") val note: String
 ) : SensorData
 
+// ==========================================
+// ¡NUEVOS! MODELOS DE SENSORES UNIVERSALES
+// ==========================================
+
+@Serializable
+data class Vector2(@SerialName("x") val x: Float, @SerialName("y") val y: Float)
+
+@Serializable
+data class OdometryData(
+    @SerialName("position") val position: Vector2,
+    @SerialName("linear_velocity") val linearVelocity: Float,
+    @SerialName("angular_velocity") val angularVelocity: Float
+) : SensorData
+
+@Serializable
+data class NavSatFixData(
+    // Usamos Double porque las coordenadas GPS requieren muchísima precisión
+    @SerialName("latitude") val latitude: Double,
+    @SerialName("longitude") val longitude: Double,
+    @SerialName("altitude") val altitude: Double,
+    @SerialName("status") val status: Int
+) : SensorData
+
+@Serializable
+data class WrenchData(
+    @SerialName("force") val force: Vector3,
+    @SerialName("torque") val torque: Vector3
+) : SensorData
+
+@Serializable
+data class TemperatureData(
+    @SerialName("temperature") val temperature: Float
+) : SensorData
+
 // El objeto final que leerá el ViewModel (¡100% Kotlin puro!)
 data class SensorStreamData(
     val topic: String,

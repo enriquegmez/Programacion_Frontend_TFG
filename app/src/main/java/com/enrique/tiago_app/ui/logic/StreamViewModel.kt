@@ -68,7 +68,21 @@ class StreamViewModel(
                 quality = _currentQuality.value
             )
         } else if (monitorState.value == AppConstants.MonitorState.RECIBIENDO_STREAM) {
-            director.sendStopStream(resource = _currentResource.value)
+            // ¡ARREGLADO! Ahora sí enviamos qué topic exacto queremos detener
+            director.sendStopStream(
+                resource = _currentResource.value,
+                topic = _currentTopic.value
+            )
+        }
+    }
+
+    // ¡NUEVO! Para apagar la cámara automáticamente al salir de la pestaña
+    fun onScreenDisposed() {
+        if (monitorState.value != AppConstants.MonitorState.IDLE) {
+            director.sendStopStream(
+                resource = _currentResource.value,
+                topic = _currentTopic.value
+            )
         }
     }
 

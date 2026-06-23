@@ -91,8 +91,13 @@ class ProtocolDirector(
     val rosActions: StateFlow<Map<String, List<String>>> = _rosActions.asStateFlow()
 
     // ¡NUEVO! Variables observables para los Sensores
+    // ¡NUEVO! Variables observables para los Sensores
     private val _availableSensors = MutableStateFlow<List<SensorInfo>>(emptyList())
     val availableSensors: StateFlow<List<SensorInfo>> = _availableSensors.asStateFlow()
+
+    // ¡NUEVO! Memoria para saber si ya hemos buscado en esta sesión
+    private val _hasScannedSensors = MutableStateFlow(false)
+    val hasScannedSensors: StateFlow<Boolean> = _hasScannedSensors.asStateFlow()
 
     // Un mapa en tiempo real. Clave: topic ("/scan"). Valor: Los datos puros de Kotlin
     private val _activeSensorData = MutableStateFlow<Map<String, SensorStreamData>>(emptyMap())
@@ -104,8 +109,15 @@ class ProtocolDirector(
         _rosActions.value = emptyMap()
     }
 
+    // Este lo usaremos al DESCONECTARNOS del robot (Borra todo)
     fun clearSensorData() {
         _availableSensors.value = emptyList()
+        _activeSensorData.value = emptyMap()
+        _hasScannedSensors.value = false // Reseteamos la búsqueda
+    }
+
+    // ¡NUEVO! Este lo usaremos al SALIR de la pestaña (Conserva el menú)
+    fun clearActiveSensorData() {
         _activeSensorData.value = emptyMap()
     }
 
@@ -187,11 +199,20 @@ class ProtocolDirector(
         }
     }
 
+    // ==========================================
+    // LIMPIEZA TOTAL DE MEMORIA
+    // ==========================================
+    private fun clearAllSessionData() {
+        clearSensorData()
+        clearRobotCapabilities()
+        clearNetworkInfo()
+    }
+
     fun disconnectFromServer() {
         scope.launch {
             webSocketClient.disconnect()
             sessionManager.clearSession()
-            clearSensorData()
+            clearAllSessionData() // ¡Limpieza total!
         }
     }
 
@@ -258,14 +279,16 @@ class ProtocolDirector(
     }
 
     // ==========================================
-    // ¡NUEVO! MÉTODOS DE VÍDEO
+    // API UNIVERSAL DE STREAMS (Cámaras y Sensores)
     // ==========================================
+
     /**
-     * @param resource "camera", "lidar", "imu", etc.
-     * @param topic El topic de ROS 2 al que suscribirse (ej: "/head_camera/image_raw")
-     * @param quality "low", "medium", "high"
+     * Abre el flujo de datos de cualquier recurso continuo.
+     * @param resource "camera", "sensors", etc.
+     * @param topic El topic de ROS 2 (ej: "/scan" o "/head_camera/rgb/image_raw")
+     * @param quality "low", "medium", "high" (Opcional, los sensores lo ignoran)
      */
-    fun sendStartStream(resource: String, topic: String, quality: String) {
+    fun sendStartStream(resource: String, topic: String, quality: String? = null) {
         val payload = StreamReqPayload(
             resource = resource,
             topic = topic,
@@ -275,11 +298,20 @@ class ProtocolDirector(
     }
 
     /**
-     * @param resource "camera", "lidar", "imu", etc.
+     * Detiene el flujo de datos de un topic específico.
      */
-    fun sendStopStream(resource: String) {
-        val payload = StopStreamReqPayload(resource = resource)
+    fun sendStopStream(resource: String, topic: String) {
+        val payload = StopStreamReqPayload(
+            resource = resource,
+            topic = topic
+        )
         dispatchMessage(AppConstants.MsgType.STOP_STREAM_REQ, payload)
+
+        // AUTOMATIZACIÓN: Si lo que acabamos de parar era un sensor, lo borramos
+        // de la memoria RAM local para que la gráfica de Compose desaparezca al instante.
+        if (resource.equals(AppConstants.Resource.SENSORS, ignoreCase = true)) {
+            _activeSensorData.value = _activeSensorData.value - topic
+        }
     }
 
     // ==========================================
@@ -310,27 +342,9 @@ class ProtocolDirector(
     // ¡NUEVO! MÉTODOS DE SENSORES
     // ==========================================
     fun sendQuerySensorsReq() {
+        _hasScannedSensors.value = true // ¡Anotamos que ya hemos buscado!
         val payload = QueryReqPayload(resourceType = AppConstants.Resource.SENSORS)
         dispatchMessage(AppConstants.MsgType.QUERY_REQ, payload)
-    }
-
-    fun sendStartSensorStream(topic: String) {
-        val payload = StreamReqPayload(
-            resource = AppConstants.Resource.SENSORS,
-            topic = topic
-        )
-        dispatchMessage(AppConstants.MsgType.STREAM_REQ, payload)
-    }
-
-    fun sendStopSensorStream(topic: String) {
-        val payload = StopStreamReqPayload(
-            resource = AppConstants.Resource.SENSORS,
-            topic = topic
-        )
-        dispatchMessage(AppConstants.MsgType.STOP_STREAM_REQ, payload)
-
-        // Lo borramos de nuestro mapa local para que la gráfica desaparezca al instante
-        _activeSensorData.value = _activeSensorData.value - topic
     }
 
     // ==========================================
@@ -546,27 +560,50 @@ class ProtocolDirector(
                 return
             }
 
-            // 5.2. ¡NUEVO! Lluvia de datos de Sensores
+            // 5.2. Lluvia de datos de Sensores
             val streamResp = respMsg.payload as? StreamRespPayload
             if (streamResp != null && streamResp.parsedSensorData != null) {
+
+                // ¡EL FILTRO DE FANTASMAS (Mantiene pura la Máquina de Estados)!
+                // Si la máquina de estados ya ha cerrado la persiana (IDLE), significa que este
+                // dato es un eco de la red. Lo tiramos a la basura silenciosamente.
+                if (stateManager.monitorState.value == AppConstants.MonitorState.IDLE) {
+                    return // Salimos del handleIncomingMessage sin hacer nada
+                }
+
                 val newData = streamResp.parsedSensorData!!
 
                 // Actualizamos el mapa inmutable. (Compose lo detectará y redibujará la gráfica)
                 _activeSensorData.value = _activeSensorData.value + (newData.topic to newData)
 
-                // Creamos la petición fantasma (pero con sus datos reales) para que la máquina
-                // de estados pueda leer el "topic" y sepa mantener el semáforo encendido.
+                // Creamos la petición fantasma (pero con sus datos reales)
                 val originalOrDummyReq = reqMsg ?: RobotMessage(
                     header = MessageHeader(respMsg.header.msgId, AppConstants.MsgType.STREAM_REQ, "", 0.0),
                     payload = StreamReqPayload(resource = AppConstants.Resource.SENSORS, topic = newData.topic)
                 )
+
+                // Ahora sí, se lo pasamos al Semáforo (que lo aprobará porque no está en IDLE)
                 commitAndCheckSync(originalOrDummyReq, respMsg)
-                return // Salimos porque el dato ya está publicado
+                return
             }
         }
 
         // 6. RESPUESTAS NORMALES (Las que solo responden una vez)
+        // 6. RESPUESTAS NORMALES (Las que solo responden una vez)
         if (reqMsg != null) {
+
+            // ========================================================
+            // ¡EL ESCUDO ARQUITECTÓNICO PARA LA MÁQUINA DE ESTADOS!
+            // Si llega la confirmación de un STOP_ACTION, pero el robot ya
+            // nos avisó (por feedback) de que había terminado y estamos en IDLE,
+            // tiramos la carta a la basura para no molestar al semáforo.
+            // ========================================================
+            if (reqMsg.header.type == AppConstants.MsgType.STOP_ACTION_REQ &&
+                stateManager.movementState.value == AppConstants.MovementState.IDLE) {
+                Log.i(tag, "Confirmación de STOP_ACTION recibida, pero el robot ya terminó. Ignorado por seguridad de red.")
+                return
+            }
+
             commitAndCheckSync(reqMsg, respMsg)
 
             // ¡NUEVO! Si era una petición de vídeo y fue un éxito, extraemos la URL mágica
@@ -612,10 +649,25 @@ class ProtocolDirector(
             }
 
             // Si el backend nos confirmó el 'END', cortamos el cable físicamente
-            if (reqMsg.payload is CommandReqPayload && reqMsg.payload.action == AppConstants.Action.END) {
-                if ((respMsg.payload as? GenericRespPayload)?.success == true) {
-                    Log.i(tag, "Desconexión limpia confirmada (END). Cortando WebSocket.")
-                    disconnectFromServer()
+            if (reqMsg.payload is CommandReqPayload) {
+                val action = reqMsg.payload.action
+                val isSuccess = (respMsg.payload as? GenericRespPayload)?.success == true
+
+                if (isSuccess) {
+                    when (action) {
+                        AppConstants.Action.END -> {
+                            Log.i(tag, "Desconexión limpia confirmada (END). Cortando WebSocket.")
+                            disconnectFromServer()
+                        }
+                        AppConstants.Action.DISCONNECT -> {
+                            Log.i(tag, "Desconexión lógica confirmada (DISCONNECT). Limpiando caché.")
+                            // ¡AQUÍ ESTÁ LA MAGIA QUE FALTABA!
+                            // Ahora sí llamamos a las funciones que ya tenías definidas:
+                            clearSensorData()
+                            clearRobotCapabilities()
+                            clearNetworkInfo()
+                        }
+                    }
                 }
             }
         } else {

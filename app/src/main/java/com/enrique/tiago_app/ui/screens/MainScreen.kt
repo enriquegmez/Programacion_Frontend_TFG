@@ -1,4 +1,4 @@
-package com.enrique.tiago_app.ui.screens // Ajusta a tu paquete
+package com.enrique.tiago_app.ui.screens
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -28,10 +28,10 @@ import com.enrique.tiago_app.ui.logic.StreamViewModel
 import com.enrique.tiago_app.ui.logic.AppScreen
 import com.enrique.tiago_app.ui.logic.PlayMotionViewModel
 import com.enrique.tiago_app.ui.logic.InvestigationViewModel
-import com.enrique.tiago_app.ui.logic.JointControlViewModel // ¡NUEVO! Importa el ViewModel
+import com.enrique.tiago_app.ui.logic.JointControlViewModel
 import com.enrique.tiago_app.ui.logic.SensorViewModel
-import com.enrique.tiago_app.ui.screens.JointControlScreen // ¡NUEVO! Importa la pantalla
-import com.enrique.tiago_app.ui.screens.InvestigationScreen // Asegúrate de tener este import
+import com.enrique.tiago_app.ui.screens.JointControlScreen
+import com.enrique.tiago_app.ui.screens.InvestigationScreen
 import com.enrique.tiago_app.utils.AppConstants
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -39,45 +39,45 @@ import com.enrique.tiago_app.utils.AppConstants
 fun MainScreen(
     mainViewModel: MainViewModel,
     controlViewModel: ControlViewModel,
-    streamViewModel: StreamViewModel, // ¡NUEVO! Añadimos el ViewModel del vídeo
+    streamViewModel: StreamViewModel,
     playMotionViewModel: PlayMotionViewModel,
-    investigationViewModel: InvestigationViewModel, // ¡NUEVO!
+    investigationViewModel: InvestigationViewModel,
     jointControlViewModel: JointControlViewModel,
     sensorViewModel: SensorViewModel
 ) {
     // Observamos en qué pantalla estamos
     val currentScreen by mainViewModel.currentScreen.collectAsState()
 
-    // ¡NUEVO! Estado local para controlar si la pantalla está dividida o no
+    // ¡NUEVO! Lista de pantallas que admiten la división
+    val splitAllowedScreens = listOf(AppScreen.TELEOP, AppScreen.PLAY_MOTION, AppScreen.ARTICULACIONES)
+
+    // Estados locales para controlar la pantalla dividida
     var isSplitScreen by remember { mutableStateOf(false) }
+    // ¡NUEVO! Estado para saber qué ver en la mitad de arriba (Por defecto Cámara)
+    var topScreenSelection by remember { mutableStateOf(AppScreen.CAMERA) }
 
     // Herramientas para el menú lateral
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
 
-    // ¡NUEVO! Observamos si el joystick está mandando datos
     val movState by controlViewModel.movementState.collectAsState()
     val isTeleopActive = (movState == AppConstants.MovementState.ENVIANDO_INFO)
 
-    // ¡NUEVO! Leemos los datos del robot para saber si habilitar los botones del menú
     val robotData by mainViewModel.robotCapabilities.collectAsState()
     val hasBase = robotData?.capabilities?.hasBase == true
     val hasCameras = robotData?.capabilities?.cameras?.isNotEmpty() == true
-
     val hasPlayMotion = robotData?.capabilities?.hasPlayMotion == true
-
-    // ¡NUEVO! Comprobamos si el URDF nos ha mandado alguna articulación
     val hasJoints = robotData?.capabilities?.controlableJoints?.isNotEmpty() == true
 
-    // ¡CAMBIO! Si salimos de la pantalla de Teleoperación, apagamos la división Y los motores
+    // ¡CAMBIO! Reseteo total al cambiar de pestaña
     LaunchedEffect(currentScreen) {
-        if (currentScreen != AppScreen.TELEOP) {
-            isSplitScreen = false // Apagamos el switch visual
+        // Se resetea la division y la selección superior al cambiar de pantalla
+        isSplitScreen = false
+        topScreenSelection = AppScreen.CAMERA
 
-            // Si el robot estaba en movimiento, mandamos la señal de STOP
-            if (isTeleopActive) {
-                controlViewModel.toggleTeleop(false)
-            }
+        // Si el robot estaba en movimiento en TELEOP, mandamos la señal de STOP al salir
+        if (currentScreen != AppScreen.TELEOP && isTeleopActive) {
+            controlViewModel.toggleTeleop(false)
         }
     }
 
@@ -93,7 +93,6 @@ fun MainScreen(
                 )
                 HorizontalDivider()
 
-                // Opciones del Menú
                 NavigationDrawerItem(
                     label = { Text("Dashboard (Inicio)") },
                     selected = currentScreen == AppScreen.DASHBOARD,
@@ -103,7 +102,7 @@ fun MainScreen(
                     },
                     modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
                 )
-                // ¡NUEVO! Bloqueamos acceso si no hay base
+
                 NavigationDrawerItem(
                     label = { Text(if (hasBase) "Teleoperación" else "Teleoperación (No Disp.)") },
                     selected = currentScreen == AppScreen.TELEOP,
@@ -117,7 +116,6 @@ fun MainScreen(
                     badge = { if (!hasBase) Icon(Icons.Default.Close, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
                 )
 
-                // ¡NUEVO! Bloqueamos acceso si no hay cámaras
                 NavigationDrawerItem(
                     label = { Text(if (hasCameras) "Cámara / Sensores" else "Cámaras (No Disp.)") },
                     selected = currentScreen == AppScreen.CAMERA,
@@ -131,7 +129,6 @@ fun MainScreen(
                     badge = { if (!hasCameras) Icon(Icons.Default.Close, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
                 )
 
-                // ¡NUEVO! Menú PlayMotion
                 NavigationDrawerItem(
                     label = { Text(if (hasPlayMotion) "Movimientos Predefinidos" else "Movimientos (No Disp.)") },
                     selected = currentScreen == AppScreen.PLAY_MOTION,
@@ -145,19 +142,17 @@ fun MainScreen(
                     badge = { if (!hasPlayMotion) Icon(Icons.Default.Close, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
                 )
 
-                // ¡NUEVO! Menú Investigación / Debug
                 NavigationDrawerItem(
                     label = { Text("Investigación (ROS 2)") },
-                    selected = currentScreen == AppScreen.INVESTIGACION, // Asegúrate de añadir esto a tu enum AppScreen
+                    selected = currentScreen == AppScreen.INVESTIGACION,
                     onClick = {
                         mainViewModel.navigateTo(AppScreen.INVESTIGACION)
                         scope.launch { drawerState.close() }
                     },
                     modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
-                    icon = { Icon(Icons.Default.Info, contentDescription = null) } // Puedes usar un icono de Search o Info
+                    icon = { Icon(Icons.Default.Info, contentDescription = null) }
                 )
 
-                // ¡NUEVO! Menú para las Articulaciones
                 NavigationDrawerItem(
                     label = { Text(if (hasJoints) "Mover Articulaciones" else "Articulaciones (No Disp.)") },
                     selected = currentScreen == AppScreen.ARTICULACIONES,
@@ -179,12 +174,11 @@ fun MainScreen(
                         scope.launch { drawerState.close() }
                     },
                     modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
-                    icon = { Icon(Icons.Default.Info, contentDescription = null) } // Puedes usar el icono Info o buscar uno de gráfica (Icons.Default.Analytics si lo tienes)
+                    icon = { Icon(Icons.Default.Info, contentDescription = null) }
                 )
 
-                Spacer(Modifier.weight(1f)) // Empuja el botón de desconectar hacia abajo
+                Spacer(Modifier.weight(1f))
 
-                // Botón de desconexión general
                 Button(
                     onClick = { mainViewModel.disconnectFromRobot() },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
@@ -197,33 +191,32 @@ fun MainScreen(
             }
         }
     ) {
-        // EL ANDAMIO PRINCIPAL (Lo que se ve cuando el menú está cerrado)
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text(text = "Tiago App") },
+                    title = { // ¡CAMBIO! Solo mostramos el título si NO estamos en pantalla dividida
+                        if (!isSplitScreen) {
+                            Text(text = "Tiago App")
+                        }
+                    },
                     navigationIcon = {
                         IconButton(onClick = { scope.launch { drawerState.open() } }) {
                             Icon(Icons.Default.Menu, contentDescription = "Abrir Menú")
                         }
                     },
                     actions = {
-                        // 1. EL INDICADOR DE BATERÍA GLOBAL
-                        // Lo ponemos fuera del `if` para que se vea en todas las pantallas.
                         val batteryPct = robotData?.status?.batteryPct
                         if (batteryPct != null) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                // Cambiamos el color según el porcentaje
                                 val batteryColor = when {
-                                    batteryPct > 50 -> Color(0xFF4CAF50) // Verde
-                                    batteryPct > 25 -> Color(0xFFFFA000) // Amarillo
-                                    else -> MaterialTheme.colorScheme.error // Rojo (25 o menos)
+                                    batteryPct > 50 -> Color(0xFF4CAF50)
+                                    batteryPct > 25 -> Color(0xFFFFA000)
+                                    else -> MaterialTheme.colorScheme.error
                                 }
 
                                 val isCharging = robotData?.status?.isCharging == true
 
                                 Icon(
-                                    // Si está cargando pinta el Rayo, si no, la Pila. (Si no tiene sensor, isCharging será false siempre).
                                     imageVector = if (isCharging) Icons.Default.Bolt else Icons.Default.BatteryFull,
                                     contentDescription = "Batería",
                                     tint = if (isCharging) Color(0xFFFFEB3B) else batteryColor,
@@ -236,13 +229,29 @@ fun MainScreen(
                                     fontWeight = FontWeight.Bold,
                                     color = batteryColor
                                 )
-                                Spacer(modifier = Modifier.width(16.dp)) // Separación con el Switch (si lo hay)
+                                Spacer(modifier = Modifier.width(16.dp))
                             }
                         }
 
-                        // 2. EL INTERRUPTOR DE PANTALLA DIVIDIDA
-                        // Solo se pinta si estamos en la pantalla de TELEOP
-                        if (currentScreen == AppScreen.TELEOP) {
+                        // ¡NUEVO! EL INTERRUPTOR DE PANTALLA DIVIDIDA Y SELECTOR
+                        val isSplitAllowed = currentScreen in splitAllowedScreens
+                        if (isSplitAllowed) {
+
+                            // Botón dinámico que solo aparece si la pantalla está dividida
+                            if (isSplitScreen) {
+                                TextButton(
+                                    onClick = {
+                                        topScreenSelection = if (topScreenSelection == AppScreen.CAMERA) AppScreen.SENSORES else AppScreen.CAMERA
+                                    }
+                                ) {
+                                    Text(
+                                        text = if (topScreenSelection == AppScreen.CAMERA) "Ver Sensores" else "Ver Cámara",
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
                                     text = "Dividir",
@@ -265,39 +274,38 @@ fun MainScreen(
                 )
             }
         ) { innerPadding ->
-            // CONTENIDO VARIABLE SEGÚN EL MENÚ
             Box(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
-                // ¡NUEVO! Lógica de visualización
-                if (isSplitScreen && currentScreen == AppScreen.TELEOP) {
+
+                // ==========================================
+                // LÓGICA DE VISUALIZACIÓN DIVIDIDA
+                // ==========================================
+                if (isSplitScreen && currentScreen in splitAllowedScreens) {
                     Column(modifier = Modifier.fillMaxSize()) {
-                        // MITAD SUPERIOR: CÁMARA O AVISO
-                        Box(
-                            modifier = Modifier.weight(1f).fillMaxWidth(),
-                            contentAlignment = Alignment.Center // Centramos el contenido por si es texto
-                        ) {
-                            if (hasCameras) {
-                                StreamView(
-                                    streamViewModel = streamViewModel,
-                                    cameraTopics = robotData?.capabilities?.cameraTopics
-                                        ?: emptyList(),
-                                    isCompact = true
-                                )
-                            } else {
-                                // ¡NUEVO! Aviso elegante si no hay cámaras
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Icon(
-                                        imageVector = Icons.Default.Info,
-                                        contentDescription = "Sin Cámara",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(48.dp)
+
+                        // MITAD SUPERIOR: Cámara o Sensores
+                        Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                            if (topScreenSelection == AppScreen.CAMERA) {
+                                if (hasCameras) {
+                                    StreamView(
+                                        streamViewModel = streamViewModel,
+                                        cameraTopics = robotData?.capabilities?.cameraTopics ?: emptyList(),
+                                        isCompact = true
                                     )
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Text(
-                                        text = "El robot no tiene cámaras disponibles",
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        style = MaterialTheme.typography.bodyLarge
-                                    )
+                                } else {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Icon(
+                                            imageVector = Icons.Default.Info,
+                                            contentDescription = "Sin Cámara",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(48.dp)
+                                        )
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Text("El robot no tiene cámaras disponibles", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
                                 }
+                            } else if (topScreenSelection == AppScreen.SENSORES) {
+                                // La pantalla de sensores se adapta automáticamente a la mitad del espacio
+                                SensorScreen(viewModel = sensorViewModel)
                             }
                         }
 
@@ -306,31 +314,37 @@ fun MainScreen(
                             color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
                         )
 
-                        // MITAD INFERIOR: JOYSTICK
+                        // MITAD INFERIOR: La herramienta que estábamos usando
                         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                            JoystickView(
-                                controlViewModel = controlViewModel,
-                                teleopTopics = robotData?.capabilities?.teleopTopics ?: emptyList(),
-                                isCompact = true
-                            )
+                            when (currentScreen) {
+                                AppScreen.TELEOP -> JoystickView(controlViewModel = controlViewModel, teleopTopics = robotData?.capabilities?.teleopTopics ?: emptyList(), isCompact = true)
+                                AppScreen.PLAY_MOTION -> PlayMotionScreen(viewModel = playMotionViewModel, isCompact = true)
+                                AppScreen.ARTICULACIONES -> JointControlScreen(viewModel = jointControlViewModel)
+                                else -> {}
+                            }
                         }
                     }
                 } else {
-                    // MODO PANTALLA COMPLETA (El que teníamos antes)
+                    // ==========================================
+                    // MODO PANTALLA COMPLETA
+                    // ==========================================
                     when (currentScreen) {
-                        AppScreen.DASHBOARD -> DashboardView(mainViewModel) // ¡AQUÍ ESTÁ LA MAGIA!
+                        AppScreen.DASHBOARD -> DashboardView(mainViewModel)
                         AppScreen.TELEOP -> JoystickView(controlViewModel = controlViewModel, teleopTopics = robotData?.capabilities?.teleopTopics ?: emptyList())
                         AppScreen.CAMERA -> StreamView(streamViewModel = streamViewModel, cameraTopics = robotData?.capabilities?.cameraTopics ?: emptyList())
+                        // ¡CAMBIO! Añadimos isCompact = true
                         AppScreen.PLAY_MOTION -> PlayMotionScreen(viewModel = playMotionViewModel)
-                        AppScreen.INVESTIGACION -> InvestigationScreen(viewModel = investigationViewModel) // ¡NUEVO!
-                        AppScreen.ARTICULACIONES -> JointControlScreen(viewModel = jointControlViewModel) // ¡NUEVO! Se pinta aquí
-                        AppScreen.SENSORES -> SensorScreen(viewModel = sensorViewModel) // ¡NUEVO! Se pinta aquí
+                        AppScreen.INVESTIGACION -> InvestigationScreen(viewModel = investigationViewModel)
+                        AppScreen.ARTICULACIONES -> JointControlScreen(viewModel = jointControlViewModel)
+                        AppScreen.SENSORES -> SensorScreen(viewModel = sensorViewModel)
                     }
                 }
             }
         }
     }
 }
+
+// ... [Aquí sigues dejando tu función DashboardView y CapabilityRow tal y como las tienes] ...
 
 // ========================================================
 // ¡NUEVO! EL COMPONENTE VISUAL DEL DASHBOARD

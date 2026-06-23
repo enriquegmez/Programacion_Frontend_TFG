@@ -107,6 +107,14 @@ object AppConstants {
         const val BATTERY = "BatteryState"
         const val RANGE = "Range"
         const val POINT_CLOUD2 = "PointCloud2"
+
+        const val ODOMETRY = "Odometry"
+
+        const val NAV = "NavSatFix"
+
+        const val WRENCH = "Wrench"
+
+        const val TEMPERATURE = "Temperature"
     }
 
     // ¡NUEVO! Tipos para el ControlModeReq

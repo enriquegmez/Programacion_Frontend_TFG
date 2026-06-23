@@ -133,9 +133,13 @@ class ProtocolStateManager {
                             return Pair(false, "Comando denegado. El estado actual es IDLE (No hay stream que detener).")
                         }
                         AppConstants.MonitorState.RECIBIENDO_STREAM -> {
-                            // ¡AQUÍ ESTÁ LA MAGIA! Permitimos parar streams Y arrancar otros nuevos a la vez.
                             if (type == AppConstants.MsgType.STOP_STREAM_REQ || type == AppConstants.MsgType.STREAM_REQ) return Pair(true, "")
                             return Pair(false, "Comando denegado en RECIBIENDO_STREAM.")
+                        }
+                        // ¡NUEVO! Permitir pedir parar un segundo sensor mientras el primero se está parando
+                        AppConstants.MonitorState.ESPERANDO_DEJAR_DE_RECIBIR_STREAM -> {
+                            if (type == AppConstants.MsgType.STOP_STREAM_REQ) return Pair(true, "")
+                            return Pair(false, "Comando denegado. Ya se está deteniendo un stream.")
                         }
                         else -> return Pair(false, "Estado de monitorización no válido para envío.")
                     }
@@ -393,30 +397,28 @@ class ProtocolStateManager {
             return true
         }
 
-        // ==========================================
-        // ¡NUEVO! Respuestas de Vídeo y Sensores
-        // ==========================================
         else if (reqMsg.header.type == AppConstants.MsgType.STREAM_REQ) {
-            // Permitimos recibir datos tanto si estamos esperando el primer paquete, como si ya estamos recibiendo flujo continuo
+
+            // RESTAURADA TU REGLA ESTRICTA:
+            // Solo es legal recibir datos si estamos RECIBIENDO o si hemos pedido APAGAR (paquetes en vuelo).
+            // ¡Si estamos en IDLE, esto devolverá FALSE y cortará la red, como debe ser!
             if (_monitorState.value != AppConstants.MonitorState.ESPERANDO_RECIBIR_STREAM &&
-                _monitorState.value != AppConstants.MonitorState.RECIBIENDO_STREAM) return false
+                _monitorState.value != AppConstants.MonitorState.RECIBIENDO_STREAM &&
+                _monitorState.value != AppConstants.MonitorState.ESPERANDO_DEJAR_DE_RECIBIR_STREAM) return false
 
             val streamPayload = respMsg.payload as? StreamRespPayload
             val isCorrectPayload = streamPayload != null
 
-            // Comprobamos si nos mandan URL (Cámara) o si es un flujo de datos (Sensores)
             val hasValidUrl = streamPayload?.streamUrl != null
             val isSensorData = streamPayload?.streamData != null || (reqMsg.payload as? StreamReqPayload)?.resource?.uppercase() == AppConstants.Resource.SENSORS
 
             if (success && isCorrectPayload && (hasValidUrl || isSensorData)) {
-                // Guardamos en memoria qué stream se ha abierto (usando el Request)
                 val reqPayload = reqMsg.payload as? StreamReqPayload
                 val streamId = reqPayload?.topic ?: reqPayload?.resource ?: "unknown"
                 activeStreams.add(streamId)
 
                 transitionMonitor(AppConstants.MonitorState.RECIBIENDO_STREAM)
             } else {
-                // Si falla y no quedan otros streams vivos, volvemos a IDLE
                 if (activeStreams.isEmpty()) {
                     transitionMonitor(AppConstants.MonitorState.IDLE)
                 } else {
@@ -435,16 +437,20 @@ class ProtocolStateManager {
             return true
         }
         else if (reqMsg.header.type == AppConstants.MsgType.STOP_STREAM_REQ) {
-            if (_monitorState.value != AppConstants.MonitorState.ESPERANDO_DEJAR_DE_RECIBIR_STREAM) return false
+
+            // ¡EL PARCHE DEL BUCLE (Salir del menú)!
+            // Permitimos recibir la confirmación de parada si estamos ESPERANDO o si ya
+            // hemos vuelto a RECIBIENDO (lo que pasa al enviar una ráfaga de 3 paradas de golpe).
+            if (_monitorState.value != AppConstants.MonitorState.ESPERANDO_DEJAR_DE_RECIBIR_STREAM &&
+                _monitorState.value != AppConstants.MonitorState.RECIBIENDO_STREAM) return false
+
             val isCorrectPayload = respMsg.payload is GenericRespPayload
 
             if (success && isCorrectPayload) {
-                // Borramos este stream de la memoria
                 val reqPayload = reqMsg.payload as StopStreamReqPayload
                 val streamId = reqPayload.topic ?: reqPayload.resource
                 activeStreams.remove(streamId)
 
-                // ¡TU REGLA EXACTA! Solo volvemos a IDLE si ya no queda ningún sensor ni cámara encendida
                 if (activeStreams.isEmpty()) {
                     transitionMonitor(AppConstants.MonitorState.IDLE)
                 } else {
@@ -531,8 +537,16 @@ class ProtocolStateManager {
                 }
             }
             // Carril de Vídeo
+            // Carril de Vídeo y Sensores
             AppConstants.MsgType.STREAM_REQ, AppConstants.MsgType.STOP_STREAM_REQ -> {
-                if (_monitorState.value.startsWith("ESPERANDO_")) Pair(true, "Bloqueado: Petición de cámara en curso.") else Pair(false, "")
+                // ¡EXCEPCIÓN MÁGICA! Permitimos múltiples paradas a la vez cuando salimos de la pestaña
+                if (msgType == AppConstants.MsgType.STOP_STREAM_REQ && _monitorState.value == AppConstants.MonitorState.ESPERANDO_DEJAR_DE_RECIBIR_STREAM) {
+                    Pair(false, "")
+                } else if (_monitorState.value.startsWith("ESPERANDO_")) {
+                    Pair(true, "Bloqueado: Petición de cámara/sensor en curso.")
+                } else {
+                    Pair(false, "")
+                }
             }
             else -> Pair(false, "")
         }

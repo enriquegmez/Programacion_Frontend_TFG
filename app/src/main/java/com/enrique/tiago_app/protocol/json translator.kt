@@ -93,6 +93,14 @@ class MessageCodec {
                                         AppConstants.SensorType.BATTERY -> jsonFormat.decodeFromJsonElement<BatterySensorData>(rawDataObj)
                                         AppConstants.SensorType.RANGE -> jsonFormat.decodeFromJsonElement<RangeSensorData>(rawDataObj)
                                         AppConstants.SensorType.POINT_CLOUD2 -> jsonFormat.decodeFromJsonElement<PointCloud2Data>(rawDataObj)
+
+                                        // ==========================================
+                                        // ¡LOS NUEVOS SENSORES UNIVERSALES!
+                                        // ==========================================
+                                        AppConstants.SensorType.ODOMETRY -> jsonFormat.decodeFromJsonElement<OdometryData>(rawDataObj)
+                                        AppConstants.SensorType.NAV -> jsonFormat.decodeFromJsonElement<NavSatFixData>(rawDataObj)
+                                        AppConstants.SensorType.WRENCH-> jsonFormat.decodeFromJsonElement<WrenchData>(rawDataObj)
+                                        AppConstants.SensorType.TEMPERATURE -> jsonFormat.decodeFromJsonElement<TemperatureData>(rawDataObj)
                                         else -> null
                                     }
 

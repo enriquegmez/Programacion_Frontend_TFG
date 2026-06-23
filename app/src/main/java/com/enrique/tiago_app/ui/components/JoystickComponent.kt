@@ -49,6 +49,21 @@ fun JoystickComponent(
     // Para suavizar la vuelta al centro
     val coroutineScope = rememberCoroutineScope()
 
+    // ==========================================
+    // ¡EL RESORTE VISUAL DE SEGURIDAD!
+    // ==========================================
+    LaunchedEffect(isEnabled) {
+        if (!isEnabled) {
+            // Si el joystick se desactiva (ya sea por el usuario, por lag de red
+            // o por el escudo anticolisión de Python), forzamos la bolita al centro
+            offsetX = 0f
+            offsetY = 0f
+
+            // Mandamos velocidad 0 para asegurarnos de que la UI sabe que estamos parados
+            onVelocityChanged(0f, 0f)
+        }
+    }
+
     // Función matemática para reportar los valores al padre
     fun reportVelocity(x: Float, y: Float) {
         if (!isEnabled) return

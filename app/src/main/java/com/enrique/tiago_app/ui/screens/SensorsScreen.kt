@@ -1,22 +1,27 @@
 package com.enrique.tiago_app.ui.screens
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.enrique.tiago_app.protocol.*
 import com.enrique.tiago_app.ui.logic.SensorViewModel
+import kotlin.math.absoluteValue
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -28,8 +33,8 @@ fun SensorScreen(viewModel: SensorViewModel) {
     val activeSensorTopics by viewModel.activeSensorTopics.collectAsState()
     val activeSensorData by viewModel.activeSensorData.collectAsState()
 
-    // Variable local para saber si ya hemos pulsado el botón al menos una vez
-    var hasSearched by remember { mutableStateOf(false) }
+    // Leemos la memoria a largo plazo del ViewModel
+    val hasSearched by viewModel.hasSearched.collectAsState()
 
     DisposableEffect(Unit) {
         onDispose {
@@ -43,7 +48,6 @@ fun SensorScreen(viewModel: SensorViewModel) {
         if (!hasSearched && availableSensors.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Button(onClick = {
-                    hasSearched = true
                     viewModel.fetchSensors()
                 }) {
                     Text("🔍 Escanear Sensores de la Red")
@@ -140,6 +144,14 @@ fun SensorCard(sensorInfo: SensorInfo, data: SensorStreamData?) {
                     is ImuData -> ImuView(sensorData)
                     is RangeSensorData -> RangeView(sensorData)
                     is PointCloud2Data -> PointCloudView(sensorData)
+
+                    // ==========================================
+                    // ¡LOS NUEVOS SENSORES!
+                    // ==========================================
+                    is OdometryData -> OdometryView(sensorData)
+                    is NavSatFixData -> NavSatFixView(sensorData)
+                    is WrenchData -> WrenchView(sensorData)
+                    is TemperatureData -> TemperatureView(sensorData)
                 }
             }
         }
@@ -155,38 +167,22 @@ fun LaserScanView(scan: LaserScanData) {
     Text(text = "Rango: ${scan.rangeMin}m - ${scan.rangeMax}m", fontSize = 12.sp)
     Spacer(modifier = Modifier.height(8.dp))
 
-    // ¡EL RADAR!
     Canvas(modifier = Modifier.fillMaxWidth().height(200.dp)) {
         val centerX = size.width / 2f
         val centerY = size.height / 2f
-
-        // Calculamos la escala para que el rango máximo quepa en la pantalla (dejando margen)
         val maxPixels = minOf(centerX, centerY) - 10f
         val scale = if (scan.rangeMax > 0f) maxPixels / scan.rangeMax else 10f
 
-        // 1. Dibujamos el robot en el centro (Punto Rojo)
         drawCircle(color = Color.Red, radius = 8f, center = Offset(centerX, centerY))
-
-        // 2. Dibujamos anillos de referencia grises
         drawCircle(color = Color.LightGray, radius = (scan.rangeMax * 0.5f) * scale, center = Offset(centerX, centerY), style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1f))
         drawCircle(color = Color.Gray, radius = scan.rangeMax * scale, center = Offset(centerX, centerY), style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1f))
 
-        // 3. Dibujamos los puntos del láser
         scan.ranges.forEachIndexed { index, range ->
-            // Filtramos puntos fuera de rango
             if (range in scan.rangeMin..scan.rangeMax) {
-                // Ángulo en radianes para este punto
                 val angle = scan.angleMin + (index * scan.angleIncrement)
-
-                // Conversión de Polar a Cartesiano (ROS asume que "Hacia adelante" es el eje X, así que rotamos -90 grados para la pantalla)
                 val screenX = centerX - (range * sin(angle) * scale)
                 val screenY = centerY - (range * cos(angle) * scale)
-
-                drawCircle(
-                    color = Color(0xFF00FF00), // Verde brillante
-                    radius = 3f,
-                    center = Offset(screenX.toFloat(), screenY.toFloat())
-                )
+                drawCircle(color = Color(0xFF00FF00), radius = 3f, center = Offset(screenX.toFloat(), screenY.toFloat()))
             }
         }
     }
@@ -235,7 +231,6 @@ fun ImuView(imu: ImuData) {
 
 @Composable
 fun RangeView(rangeData: RangeSensorData) {
-    // Calculamos cómo de cerca está del objeto respecto al rango del sensor
     val rangeSpan = rangeData.maxRange - rangeData.minRange
     val currentSpan = rangeData.range - rangeData.minRange
     val progress = if (rangeSpan > 0) (currentSpan / rangeSpan).coerceIn(0f, 1f) else 0f
@@ -245,7 +240,7 @@ fun RangeView(rangeData: RangeSensorData) {
     LinearProgressIndicator(
         progress = { progress },
         modifier = Modifier.fillMaxWidth().height(8.dp),
-        color = if (progress < 0.2f) Color.Red else MaterialTheme.colorScheme.primary, // Se pone rojo si está muy cerca
+        color = if (progress < 0.2f) Color.Red else MaterialTheme.colorScheme.primary,
     )
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Text("Min: ${rangeData.minRange}m", fontSize = 10.sp)
@@ -255,15 +250,166 @@ fun RangeView(rangeData: RangeSensorData) {
 
 @Composable
 fun PointCloudView(pc: PointCloud2Data) {
-    Text(
-        text = "☁️ Nube de Puntos Espacial (${pc.width}x${pc.height})",
-        fontWeight = FontWeight.Bold
-    )
+    Text("☁️ Nube de Puntos Espacial (${pc.width}x${pc.height})", fontWeight = FontWeight.Bold)
     Spacer(modifier = Modifier.height(8.dp))
-    Text(
-        text = pc.note,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        fontSize = 12.sp,
-        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
-    )
+    Text(pc.note, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
+}
+
+// ==========================================
+// ¡NUEVOS! VISTAS UNIVERSALES
+// ==========================================
+
+@Composable
+fun OdometryView(odom: OdometryData) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text("📍 Posición Global (Mapa)", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("X: ${String.format("%.3f", odom.position.x)} m")
+            Text("Y: ${String.format("%.3f", odom.position.y)} m")
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Text("Velocidad Actual", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+
+        // Simulamos un velocímetro con una barra (Asumimos max 1.0 m/s para la visualización)
+        val linearProg = (odom.linearVelocity.absoluteValue / 1.0f).coerceIn(0f, 1f)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Lineal:", fontSize = 12.sp, modifier = Modifier.width(60.dp))
+            LinearProgressIndicator(
+                progress = { linearProg },
+                modifier = Modifier.weight(1f).height(8.dp),
+                color = MaterialTheme.colorScheme.primary
+            )
+            Text(String.format(" %.2f m/s", odom.linearVelocity), fontSize = 12.sp, modifier = Modifier.width(70.dp))
+        }
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        val angularProg = (odom.angularVelocity.absoluteValue / 2.0f).coerceIn(0f, 1f)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Giro:", fontSize = 12.sp, modifier = Modifier.width(60.dp))
+            LinearProgressIndicator(
+                progress = { angularProg },
+                modifier = Modifier.weight(1f).height(8.dp),
+                color = MaterialTheme.colorScheme.tertiary
+            )
+            Text(String.format(" %.2f rad/s", odom.angularVelocity), fontSize = 12.sp, modifier = Modifier.width(70.dp))
+        }
+    }
+}
+
+@Composable
+fun NavSatFixView(gps: NavSatFixData) {
+    // ROS GPS Status: -1 (NO_FIX), 0 (FIX), 1 (SBAS_FIX), 2 (GBAS_FIX)
+    val hasSignal = gps.status >= 0
+    val statusColor = if (hasSignal) Color(0xFF4CAF50) else Color(0xFFF44336)
+    val statusText = if (hasSignal) "Señal Satélite OK" else "Buscando Satélites..."
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(modifier = Modifier.size(12.dp).clip(androidx.compose.foundation.shape.CircleShape).background(statusColor))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(statusText, fontWeight = FontWeight.Bold, color = statusColor)
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Column {
+                Text("Latitud", fontSize = 12.sp, color = Color.Gray)
+                Text(String.format("%.6f°", gps.latitude), fontWeight = FontWeight.SemiBold)
+            }
+            Column {
+                Text("Longitud", fontSize = 12.sp, color = Color.Gray)
+                Text(String.format("%.6f°", gps.longitude), fontWeight = FontWeight.SemiBold)
+            }
+            Column {
+                Text("Altitud", fontSize = 12.sp, color = Color.Gray)
+                Text(String.format("%.1f m", gps.altitude), fontWeight = FontWeight.SemiBold)
+            }
+        }
+    }
+}
+
+@Composable
+fun WrenchView(wrench: WrenchData) {
+    Text("Métrica de Esfuerzo (Brazo/Muñeca)", fontSize = 12.sp, color = Color.Gray)
+    Spacer(modifier = Modifier.height(8.dp))
+
+    // Fuerza (Newtons)
+    Text("Fuerza (N)", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+    ZeroCenteredBar("X", wrench.force.x, 50f)
+    ZeroCenteredBar("Y", wrench.force.y, 50f)
+    ZeroCenteredBar("Z", wrench.force.z, 50f)
+
+    Spacer(modifier = Modifier.height(8.dp))
+
+    // Torque (Newtons/Metro)
+    Text("Torque (Nm)", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+    ZeroCenteredBar("X", wrench.torque.x, 10f)
+    ZeroCenteredBar("Y", wrench.torque.y, 10f)
+    ZeroCenteredBar("Z", wrench.torque.z, 10f)
+}
+
+// Componente auxiliar para pintar una barra donde el "0" está en el centro
+@Composable
+fun ZeroCenteredBar(label: String, value: Float, maxValue: Float) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+        Text("$label:", fontSize = 12.sp, modifier = Modifier.width(24.dp))
+
+        Box(modifier = Modifier.weight(1f).height(12.dp).background(Color.LightGray.copy(alpha = 0.3f))) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val midX = size.width / 2f
+                // Normalizamos el valor entre -1 y 1
+                val normalized = (value / maxValue).coerceIn(-1f, 1f)
+                val barWidth = (normalized.absoluteValue * midX)
+
+                if (normalized > 0) {
+                    // Fuerza Positiva -> Dibuja hacia la derecha en Azul
+                    drawRect(color = Color(0xFF2196F3), topLeft = Offset(midX, 0f), size = Size(barWidth, size.height))
+                } else if (normalized < 0) {
+                    // Fuerza Negativa -> Dibuja hacia la izquierda en Rojo
+                    drawRect(color = Color(0xFFF44336), topLeft = Offset(midX - barWidth, 0f), size = Size(barWidth, size.height))
+                }
+
+                // Línea central del cero
+                drawLine(color = Color.Black, start = Offset(midX, 0f), end = Offset(midX, size.height), strokeWidth = 2f)
+            }
+        }
+        Text(String.format(" %5.1f", value), fontSize = 12.sp, modifier = Modifier.width(48.dp))
+    }
+}
+
+@Composable
+fun TemperatureView(temp: TemperatureData) {
+    val t = temp.temperature
+    // Lógica de color: Frío (<15), Normal (15-45), Caliente (45-65), Peligro (>65)
+    val tempColor = when {
+        t < 15f -> Color(0xFF2196F3) // Azul
+        t < 45f -> Color(0xFF4CAF50) // Verde
+        t < 65f -> Color(0xFFFF9800) // Naranja
+        else -> Color(0xFFF44336)    // Rojo
+    }
+
+    val progress = (t / 100f).coerceIn(0f, 1f) // Asumimos 100ºC como el máximo de la barra
+
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        Text("🌡️", fontSize = 24.sp)
+        Spacer(modifier = Modifier.width(8.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("Temperatura Interna", fontSize = 12.sp, color = Color.Gray)
+                Text("${String.format("%.1f", t)} °C", fontWeight = FontWeight.Bold, color = tempColor)
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            // Usamos un Clip redondeado para que parezca un termómetro
+            LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier.fillMaxWidth().height(12.dp).clip(RoundedCornerShape(6.dp)),
+                color = tempColor,
+                trackColor = Color.LightGray.copy(alpha = 0.3f)
+            )
+        }
+    }
 }
