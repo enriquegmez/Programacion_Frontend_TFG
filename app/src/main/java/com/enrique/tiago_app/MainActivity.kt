@@ -29,6 +29,7 @@ import com.enrique.tiago_app.utils.AppConstants
 
 // --- IMPORTS DE TUS VIEWMODELS ---
 import com.enrique.tiago_app.ui.logic.MainViewModel
+import com.enrique.tiago_app.ui.logic.LobbyViewModel
 import com.enrique.tiago_app.ui.logic.ControlViewModel
 import com.enrique.tiago_app.ui.logic.StreamViewModel // ¡NUEVO IMPORT!
 import com.enrique.tiago_app.ui.logic.PlayMotionViewModel
@@ -38,7 +39,7 @@ import com.enrique.tiago_app.ui.logic.SensorViewModel
 
 // --- IMPORTS DE TUS PANTALLAS (SCREENS) ---
 import com.enrique.tiago_app.ui.screens.WebsocketScreen
-import com.enrique.tiago_app.ui.screens.MenuScreen
+import com.enrique.tiago_app.ui.screens.LobbyScreen
 import com.enrique.tiago_app.ui.screens.MainScreen
 
 /**
@@ -93,6 +94,9 @@ fun AppNavigation() {
     // Instanciamos los dos cerebros pasándoles el mismo Director
     val mainViewModel: MainViewModel = viewModel {
         MainViewModel(AppDependencies.director)
+    }
+    val lobbyViewModel: LobbyViewModel = viewModel {
+        LobbyViewModel(AppDependencies.director)
     }
     val controlViewModel: ControlViewModel = viewModel {
         ControlViewModel(AppDependencies.director)
@@ -189,7 +193,7 @@ fun AppNavigation() {
 
         // Pantalla 2: Menú Intermedio
         composable("conexion") {
-            MenuScreen(viewModel = mainViewModel)
+            LobbyScreen(viewModel = lobbyViewModel)
         }
 
         // Pantalla 3: Teleoperación con Joystick

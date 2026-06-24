@@ -83,6 +83,8 @@ object AppConstants {
         const val CONNECT = "connect"
         const val DISCONNECT = "disconnect"
         const val CHANGE_VARS = "change_vars"
+        const val REBOOT = "reboot"     // ¡NUEVO! Reiniciar PC
+        const val SHUTDOWN = "shutdown" // ¡NUEVO! Apagar PC
         const val END = "end"
         const val GET_HISTORY = "get_history"
         const val SSH = "ssh"
@@ -90,6 +92,7 @@ object AppConstants {
 
     // ¡NUEVO! Tipos de recursos para QueryReq
     object Resource {
+        const val HOST_INFO = "HOST_INFO" // ¡NUEVO! Telemetría del PC
         const val ROBOT_INFO = "ROBOT_INFO"
         const val TELEOP = "TELEOP"
         const val CAMERAS = "CAMERAS"
@@ -97,7 +100,7 @@ object AppConstants {
         const val TOPICS = "TOPICS"
         const val SERVICES = "SERVICES"
         const val ACTIONS = "ACTIONS"
-        const val SENSORS = "SENSORS" // ¡NUEVO!
+        const val SENSORS = "SENSORS"
     }
 
     // ¡NUEVO! Tipos de sensores que nuestra app sabe dibujar

@@ -30,6 +30,13 @@ class MessageCodec {
 
     fun decode(rawString: String): RobotMessage {
         return try {
+
+            // --- ¡AÑADE ESTA LÍNEA AQUÍ! ---
+            if (rawString.contains("cpu_pct")) {
+                Log.e("CHIVATO_KOTLIN", "JSON Crudo recibido: $rawString")
+            }
+            // -------------------------------
+
             val jsonObj = jsonFormat.parseToJsonElement(rawString).jsonObject
             val header = jsonFormat.decodeFromJsonElement<MessageHeader>(jsonObj["header"]!!)
             val payloadJson = jsonObj["payload"]!!
@@ -64,7 +71,11 @@ class MessageCodec {
                                     }
                                 }
                                 is JsonObject -> {
-                                    if (dataElement.containsKey("capabilities") || dataElement.containsKey("identity") || dataElement.containsKey("status")) {
+                                    // ¡NUEVO! Si tiene datos de CPU, es la telemetría de la Sala de Espera
+                                    if (dataElement.containsKey("cpu_pct") || dataElement.containsKey("ros_distro")) {
+                                        HostInfoResult(jsonFormat.decodeFromJsonElement(dataElement))
+                                    }
+                                    else if (dataElement.containsKey("capabilities") || dataElement.containsKey("identity") || dataElement.containsKey("status")) {
                                         RobotInfoResult(jsonFormat.decodeFromJsonElement(dataElement))
                                     } else {
                                         NetworkInfoResult(jsonFormat.decodeFromJsonElement(dataElement))

@@ -115,6 +115,8 @@ data class RobotInfoResult(val info: RobotCapabilitiesData) : QueryDataResult
 data class ActionListResult(val actions: List<String>) : QueryDataResult
 data class NetworkInfoResult(val networkData: Map<String, List<String>>) : QueryDataResult
 data class SensorListResult(val sensors: List<SensorInfo>) : QueryDataResult // ¡NUEVO!
+data class HostInfoResult(val telemetry: HostTelemetryData) : QueryDataResult // ¡NUEVO!
+
 @Serializable
 data class QueryRespPayload(
     @SerialName("success") val success: Boolean,
@@ -187,9 +189,9 @@ data class IdentityData(
 
 @Serializable
 data class StatusData(
-    @SerialName("battery_pct") val batteryPct: Double,
-    @SerialName("e_stop_active") val eStopActive: Boolean,
-    @SerialName("is_charging") val isCharging: Boolean
+    @SerialName("battery_pct") val batteryPct: Double?,
+    @SerialName("e_stop_active") val eStopActive: Boolean?,
+    @SerialName("is_charging") val isCharging: Boolean?
 )
 
 @Serializable
@@ -322,4 +324,19 @@ data class SensorStreamData(
     val topic: String,
     val type: String,
     val data: SensorData
+)
+
+// ¡NUEVO! Data class para atrapar la telemetría del PC en la Sala de Espera
+@Serializable
+data class HostTelemetryData(
+    @SerialName("cpu_pct") val cpuPct: Double?,        // Ahora pueden ser nulos
+    @SerialName("ram_used_gb") val ramUsedGb: Double?,
+    @SerialName("ram_total_gb") val ramTotalGb: Double?,
+    @SerialName("ram_pct") val ramPct: Double?,
+    @SerialName("temp_c") val tempC: Double?,
+    @SerialName("ros_distro") val rosDistro: String?,
+    @SerialName("ros_domain_id") val rosDomainId: String?,
+    @SerialName("current_dds") val currentDds: String?,
+    @SerialName("available_dds") val availableDds: List<String>?,
+    @SerialName("use_discovery") val useDiscovery: Boolean?
 )

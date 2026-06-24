@@ -35,6 +35,8 @@ import com.enrique.tiago_app.protocol.StopActionReqPayload
 import com.enrique.tiago_app.protocol.ActionFeedbackPayload
 import com.enrique.tiago_app.protocol.RobotInfoResult
 import com.enrique.tiago_app.protocol.ActionListResult
+import com.enrique.tiago_app.protocol.HostInfoResult
+import com.enrique.tiago_app.protocol.HostTelemetryData
 import com.enrique.tiago_app.protocol.SensorInfo
 import com.enrique.tiago_app.protocol.SensorStreamData
 import com.enrique.tiago_app.protocol.SensorListResult
@@ -72,6 +74,10 @@ class ProtocolDirector(
     // ¡NUEVO! Estado observable de la radiografía del robot
     private val _robotCapabilities = MutableStateFlow<RobotCapabilitiesData?>(null)
     val robotCapabilities: StateFlow<RobotCapabilitiesData?> = _robotCapabilities.asStateFlow()
+
+    // ¡NUEVO! Estado observable de la telemetría del PC (Lobby)
+    private val _hostTelemetry = MutableStateFlow<HostTelemetryData?>(null)
+    val hostTelemetry: StateFlow<HostTelemetryData?> = _hostTelemetry.asStateFlow()
 
     // ¡NUEVO! Variables observables para las Acciones
     private val _availableActions = MutableStateFlow<List<String>>(emptyList())
@@ -206,6 +212,7 @@ class ProtocolDirector(
         clearSensorData()
         clearRobotCapabilities()
         clearNetworkInfo()
+        _hostTelemetry.value = null
     }
 
     fun disconnectFromServer() {
@@ -383,6 +390,34 @@ class ProtocolDirector(
     }
 
     // ==========================================
+    // ¡NUEVO! MÉTODOS DE LA SALA DE ESPERA (LOBBY)
+    // ==========================================
+    fun requestHostTelemetry() {
+        val payload = QueryReqPayload(resourceType = AppConstants.Resource.HOST_INFO)
+        dispatchMessage(AppConstants.MsgType.QUERY_REQ, payload)
+    }
+
+    fun sendChangeVars(domainId: String, dds: String, useDiscovery: Boolean) {
+        val payload = CommandReqPayload(
+            action = AppConstants.Action.CHANGE_VARS,
+            param1 = domainId,
+            param2 = dds,
+            param3 = useDiscovery // ¡Inyectamos la casilla aquí!
+        )
+        dispatchMessage(AppConstants.MsgType.COMMAND_REQ, payload)
+    }
+
+    fun sendRebootRobot() {
+        val payload = CommandReqPayload(action = AppConstants.Action.REBOOT)
+        dispatchMessage(AppConstants.MsgType.COMMAND_REQ, payload)
+    }
+
+    fun sendShutdownRobot() {
+        val payload = CommandReqPayload(action = AppConstants.Action.SHUTDOWN)
+        dispatchMessage(AppConstants.MsgType.COMMAND_REQ, payload)
+    }
+
+    // ==========================================
     // CEREBRO DE ENVÍO (Outbound)
     // ==========================================
     private fun dispatchMessage(type: String, payload: Payload) {
@@ -402,6 +437,7 @@ class ProtocolDirector(
             Log.w(tag, "Envío bloqueado por el Semáforo: $reason")
             return
         }
+        Log.e(tag, "✅ MÓVIL ENVÍA: $type") // Añade este chivato
 
         // Averiguamos si es el "Primer Ping" (el de Handshake)
         val isFirstPing = type == AppConstants.MsgType.PING_REQ &&
@@ -627,6 +663,9 @@ class ProtocolDirector(
                     when (val data = queryResp.parsedData) {
                         is RobotInfoResult -> {
                             _robotCapabilities.value = data.info
+                        }
+                        is HostInfoResult -> {
+                            _hostTelemetry.value = data.telemetry
                         }
                         is ActionListResult -> {
                             _availableActions.value = data.actions

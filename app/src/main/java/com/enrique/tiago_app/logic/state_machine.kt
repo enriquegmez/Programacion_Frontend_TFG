@@ -82,8 +82,19 @@ class ProtocolStateManager {
             AppConstants.GlobalState.CONEXION_BACKEND -> {
                 if (msg.payload is CommandReqPayload) {
                     val action = msg.payload.action
-                    if (action == AppConstants.Action.CONNECT || action == AppConstants.Action.END) return Pair(true, "")
+                    // ¡NUEVO! Añadidas las 3 acciones del Lobby
+                    if (action == AppConstants.Action.CONNECT ||
+                        action == AppConstants.Action.END ||
+                        action == AppConstants.Action.REBOOT ||
+                        action == AppConstants.Action.SHUTDOWN ||
+                        action == AppConstants.Action.CHANGE_VARS) return Pair(true, "")
                     return Pair(false, "Acción '$action' denegada. Se espera 'connect' o 'end'.")
+                }
+
+                // ¡NUEVO! Permitimos pedir la telemetría del PC
+                if (type == AppConstants.MsgType.QUERY_REQ && msg.payload is QueryReqPayload) {
+                    if (msg.payload.resourceType == AppConstants.Resource.HOST_INFO) return Pair(true, "")
+                    return Pair(false, "Consulta denegada. Solo se permite HOST_INFO en Sala de Espera.")
                 }
             }
 
@@ -165,7 +176,14 @@ class ProtocolStateManager {
             when (reqMsg.payload.action) {
                 AppConstants.Action.CONNECT -> transitionGlobal(AppConstants.GlobalState.ESPERANDO_INICIO_SESION)
                 AppConstants.Action.DISCONNECT -> transitionGlobal(AppConstants.GlobalState.ESPERANDO_CIERRE_SESION)
-                AppConstants.Action.END -> transitionGlobal(AppConstants.GlobalState.ESPERANDO_DESCONEXION_BACKEND)
+
+                // ¡NUEVO! Comandos que provocan la muerte del WebSocket
+                AppConstants.Action.END,
+                AppConstants.Action.REBOOT,
+                AppConstants.Action.SHUTDOWN -> transitionGlobal(AppConstants.GlobalState.ESPERANDO_DESCONEXION_BACKEND)
+
+                // ¡NUEVO! Cuando enviamos el .env, esperamos a que nos responda "OK"
+                AppConstants.Action.CHANGE_VARS -> transitionGlobal(AppConstants.GlobalState.ESPERANDO_RECIBIR_INFORMACION_UNICA)
             }
         } else if (type == AppConstants.MsgType.QUERY_REQ) {
             transitionGlobal(AppConstants.GlobalState.ESPERANDO_RECIBIR_INFORMACION_UNICA)
@@ -254,15 +272,29 @@ class ProtocolStateManager {
                     }
                 }
 
-                AppConstants.Action.END -> {
+                // ¡MODIFICADO! Agrupamos END con las nuevas órdenes de Energía
+                AppConstants.Action.END,
+                AppConstants.Action.REBOOT,
+                AppConstants.Action.SHUTDOWN -> {
                     if (_globalState.value != AppConstants.GlobalState.ESPERANDO_DESCONEXION_BACKEND) return false
                     if (success && isCorrectPayload) {
                         triggerFullReset()
                     } else {
                         transitionGlobal(AppConstants.GlobalState.CONEXION_BACKEND)
                         val errorReason = if (!isCorrectPayload) "Respuesta del servidor con formato incorrecto."
-                        else (respMsg.payload as? GenericRespPayload)?.details ?: "El servidor rechazó el cierre."
-                        showSystemAlert("Error al cerrar la sesión: $errorReason")
+                        else (respMsg.payload as? GenericRespPayload)?.details ?: "El servidor rechazó la operación."
+                        showSystemAlert("Error de energía/cierre: $errorReason")
+                    }
+                }
+
+                // ¡NUEVO! Respuesta al guardar el .env de ROS 2
+                AppConstants.Action.CHANGE_VARS -> {
+                    if (_globalState.value != AppConstants.GlobalState.ESPERANDO_RECIBIR_INFORMACION_UNICA) return false
+                    transitionGlobal(AppConstants.GlobalState.CONEXION_BACKEND) // Volvemos a la Sala de Espera
+                    if (!success || !isCorrectPayload) {
+                        val errorReason = if (!isCorrectPayload) "Formato incorrecto."
+                        else (respMsg.payload as? GenericRespPayload)?.details ?: "Error guardando la configuración."
+                        showSystemAlert("Error de red ROS 2: $errorReason")
                     }
                 }
             }
@@ -277,8 +309,12 @@ class ProtocolStateManager {
 
             val isCorrectPayload = respMsg.payload is QueryRespPayload
 
-            // Requisito cumplido: Siempre volvemos a SESION_INICIADA
-            transitionGlobal(AppConstants.GlobalState.SESION_INICIADA)
+            // ¡CORRECCIÓN! Volvemos al estado correcto según lo que habíamos pedido
+            if (reqMsg.payload.resourceType == AppConstants.Resource.HOST_INFO) {
+                transitionGlobal(AppConstants.GlobalState.CONEXION_BACKEND) // Si es telemetría, volvemos a la Sala
+            } else {
+                transitionGlobal(AppConstants.GlobalState.SESION_INICIADA) // Para lo demás, volvemos al Robot
+            }
 
             // Si hubo un error en la obtención de datos, avisamos al usuario
             if (!success || !isCorrectPayload) {

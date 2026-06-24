@@ -231,6 +231,19 @@ fun MainScreen(
                                 )
                                 Spacer(modifier = Modifier.width(16.dp))
                             }
+                        } else {
+                            // ¡NUEVO! Mostrar batería gris si es nula
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.BatteryFull,
+                                    contentDescription = "Batería Desconocida",
+                                    tint = Color.Gray,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("?%", style = MaterialTheme.typography.titleMedium, color = Color.Gray)
+                                Spacer(modifier = Modifier.width(16.dp))
+                            }
                         }
 
                         // ¡NUEVO! EL INTERRUPTOR DE PANTALLA DIVIDIDA Y SELECTOR
@@ -387,45 +400,50 @@ fun DashboardView(mainViewModel: MainViewModel) {
                 Text("Salud del Sistema", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Batería
+                // Batería blindada
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     val isCharging = status?.isCharging == true
+                    val batPct = status?.batteryPct
 
                     Icon(
                         imageVector = if (isCharging) Icons.Default.Bolt else Icons.Default.BatteryFull,
                         contentDescription = "Batería",
-                        tint = if (isCharging) Color(0xFFFFEB3B) else Color(0xFF4CAF50)
+                        tint = if (batPct == null) Color.Gray else if (isCharging) Color(0xFFFFEB3B) else Color(0xFF4CAF50)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
 
-                    // El texto cambia mágicamente en cuanto enchufas el robot
                     Text(
-                        text = if (isCharging) "Cargando... (${status?.batteryPct ?: "--"}%)"
-                        else "Batería: ${status?.batteryPct ?: "--"}%"
+                        text = if (batPct == null) "Batería: Desconocida"
+                        else if (isCharging) "Cargando... (${batPct}%)"
+                        else "Batería: ${batPct}%",
+                        color = if (batPct == null) Color.Gray else Color.Unspecified
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 LinearProgressIndicator(
                     progress = { ((status?.batteryPct ?: 0.0) / 100.0).toFloat() },
                     modifier = Modifier.fillMaxWidth(),
-                    color = Color(0xFF4CAF50)
+                    color = if (status?.batteryPct == null) Color.LightGray else Color(0xFF4CAF50)
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Parada de Emergencia
-                val isEStop = status?.eStopActive == true
+                // Parada de Emergencia blindada
+                val eStop = status?.eStopActive
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    val (iconTint, textStr, textColor) = when (eStop) {
+                        true -> Triple(MaterialTheme.colorScheme.error, "¡Parada de Emergencia ACTIVADA!", MaterialTheme.colorScheme.error)
+                        false -> Triple(Color(0xFF4CAF50), "E-Stop Desactivado (Seguro)", MaterialTheme.colorScheme.onSurface)
+                        null -> Triple(Color.Gray, "Estado E-Stop: Desconocido", Color.Gray)
+                    }
+
                     Icon(
                         imageVector = Icons.Default.Warning,
                         contentDescription = "E-Stop",
-                        tint = if (isEStop) MaterialTheme.colorScheme.error else Color.Gray
+                        tint = iconTint
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = if (isEStop) "¡Parada de Emergencia ACTIVADA!" else "E-Stop Desactivado (Seguro)",
-                        color = if (isEStop) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
-                    )
+                    Text(text = textStr, color = textColor)
                 }
             }
         }

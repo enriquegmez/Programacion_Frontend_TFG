@@ -38,32 +38,6 @@ class MainViewModel(
     // ¡NUEVO! Guardamos la referencia a la tarea repetitiva
     private var pollingJob: Job? = null
 
-    init {
-        // Vigilante del estado global
-        viewModelScope.launch {
-            director.stateManager.globalState.collect { state ->
-                when (state) {
-                    AppConstants.GlobalState.SESION_INICIADA,
-                    AppConstants.GlobalState.ESPERANDO_RECIBIR_INFORMACION_UNICA -> {
-                        // Mientras estemos en una sesión activa o actualizando info,
-                        // nos aseguramos de que el motor de peticiones esté encendido.
-                        startPolling()
-                    }
-                    AppConstants.GlobalState.IDLE,
-                    AppConstants.GlobalState.CONEXION_BACKEND -> {
-                        // Si nos desconectamos, apagamos el motor y limpiamos la pantalla.
-                        stopPolling()
-                        director.clearRobotCapabilities()
-                    }
-                    else -> {
-                        // En estados intermedios de conexión/desconexión, apagamos el polling por seguridad.
-                        stopPolling()
-                    }
-                }
-            }
-        }
-    }
-
     // ==========================================
     // ¡NUEVO! SISTEMA DE ACTUALIZACIÓN CONTINUA
     // ==========================================
@@ -122,6 +96,37 @@ class MainViewModel(
     // Jetpack Compose leerá esto para pintar los menús o deshabilitar botones.
     val robotCapabilities: StateFlow<RobotCapabilitiesData?> = director.robotCapabilities
 
+    init {
+        // Vigilante del estado global
+        viewModelScope.launch {
+            director.stateManager.globalState.collect { state ->
+                when (state) {
+                    AppConstants.GlobalState.SESION_INICIADA,
+                    AppConstants.GlobalState.ESPERANDO_RECIBIR_INFORMACION_UNICA -> {
+                        // Mientras estemos en una sesión activa o actualizando info,
+                        // nos aseguramos de que el motor de peticiones esté encendido.
+                        startPolling()
+                    }
+                    AppConstants.GlobalState.IDLE,
+                    AppConstants.GlobalState.CONEXION_BACKEND -> {
+                        // Si nos desconectamos, apagamos el motor y limpiamos la pantalla.
+                        stopPolling()
+                        director.clearRobotCapabilities()
+
+                        // ¡LA SOLUCIÓN MAESTRA!
+                        // Reseteamos el menú al salir del robot. Así, cuando volvamos a entrar,
+                        // nos recibirá el Dashboard limpio, sin interferir con las peticiones internas.
+                        _currentScreen.value = AppScreen.DASHBOARD
+                    }
+                    else -> {
+                        // En estados intermedios de conexión/desconexión, apagamos el polling por seguridad.
+                        stopPolling()
+                    }
+                }
+            }
+        }
+    }
+
     fun clearAlert() {
         director.stateManager.clearSystemAlert()
     }
@@ -157,29 +162,11 @@ class MainViewModel(
     }
 
     /**
-     * Llamado por el botón "Conectar Robot" en la Pantalla 2 (MenuScreen).
-     * Inicia la sesión lógica con el robot (Manda COMMAND_REQ[connect]).
-     */
-    fun connectToRobot() {
-        // ¡NUEVO! Cada vez que nos conectamos al robot, forzamos que se abra la pantalla en blanco.
-        _currentScreen.value = AppScreen.DASHBOARD
-        director.sendConnectToRobot()
-    }
-
-    /**
      * ¡NUEVO! Llamado por el botón "Desconectar Robot" en la Pantalla 3 (ControlScreen).
      * Cierra la sesión lógica y devuelve a la app a la Pantalla 2.
      * (Manda COMMAND_REQ(disconnect)).
      */
     fun disconnectFromRobot() {
         director.sendDisconnectFromRobot()
-    }
-
-    /**
-     * Llamado por el botón "Cerrar Conexión" en la Pantalla 2 (MenuScreen).
-     * Cierra la sesión y corta el túnel físico.
-     */
-    fun closeEverything() {
-        director.sendEndProtocol()
     }
 }
