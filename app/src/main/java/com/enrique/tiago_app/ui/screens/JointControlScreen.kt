@@ -1,7 +1,7 @@
 package com.enrique.tiago_app.ui.screens
 
-import androidx.compose.foundation.horizontalScroll // ¡NUEVO IMPORT!
-import androidx.compose.foundation.rememberScrollState // ¡NUEVO IMPORT!
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -15,7 +15,7 @@ import androidx.compose.ui.unit.sp
 import com.enrique.tiago_app.protocol.JointLimit
 import com.enrique.tiago_app.ui.logic.JointControlViewModel
 
-@OptIn(ExperimentalMaterial3Api::class) // Ya no necesitamos el ExperimentalLayoutApi del FlowRow
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun JointControlScreen(viewModel: JointControlViewModel) {
 
@@ -42,11 +42,10 @@ fun JointControlScreen(viewModel: JointControlViewModel) {
                 color = MaterialTheme.colorScheme.error
             )
         } else {
-            // 1. ZONA DE SELECCIÓN (Fila con Scroll Horizontal Seguro)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()), // Permite deslizar a los lados
+                    .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 controlableJoints.forEach { joint ->
@@ -63,7 +62,6 @@ fun JointControlScreen(viewModel: JointControlViewModel) {
             HorizontalDivider()
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 2. ZONA DE SLIDERS
             if (activeJoints.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text("Activa al menos una articulación arriba para controlarla.", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -78,11 +76,9 @@ fun JointControlScreen(viewModel: JointControlViewModel) {
                     items(items = activeJointLimits) { jointLimit ->
                         JointSliderItem(
                             jointLimit = jointLimit,
-                            // 1º Prioridad: Donde tenga el dedo el usuario ahora mismo (jointValues)
-                            // 2º Prioridad: La posición real física del robot (jointLimit.currentValue)
-                            // 3º Prioridad: El punto medio (por si falla la red)
                             currentValue = jointValues[jointLimit.name] ?: jointLimit.currentValue ?: ((jointLimit.min + jointLimit.max) / 2f),
-                            onValueChange = { newValue -> viewModel.updateJointValue(jointLimit.name, newValue) }
+                            onValueChange = { newValue -> viewModel.updateJointValue(jointLimit.name, newValue) },
+                            onDragFinished = { viewModel.onJointDragFinished(jointLimit.name) }
                         )
                     }
                 }
@@ -95,9 +91,9 @@ fun JointControlScreen(viewModel: JointControlViewModel) {
 fun JointSliderItem(
     jointLimit: JointLimit,
     currentValue: Float,
-    onValueChange: (Float) -> Unit
+    onValueChange: (Float) -> Unit,
+    onDragFinished: () -> Unit
 ) {
-    // Blindaje de límites matemáticos
     val isInvalidRange = jointLimit.min >= jointLimit.max
     val safeMin = if (isInvalidRange) -3.14f else jointLimit.min
     val safeMax = if (isInvalidRange) 3.14f else jointLimit.max
@@ -121,6 +117,7 @@ fun JointSliderItem(
             Slider(
                 value = safeCurrentValue,
                 onValueChange = onValueChange,
+                onValueChangeFinished = onDragFinished,
                 valueRange = safeMin..safeMax,
                 modifier = Modifier.fillMaxWidth()
             )

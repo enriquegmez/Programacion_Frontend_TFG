@@ -6,38 +6,54 @@ import com.enrique.tiago_app.utils.AppConstants
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlin.math.abs
 
 class JointControlViewModel(
     private val director: ProtocolDirector
 ) : ViewModel() {
 
-    // Extraemos la lista de articulaciones leída del robot
     val capabilities = director.robotCapabilities
 
-    // Guardamos qué articulaciones tienen el "tick" puesto (Set de nombres)
     private val _activeJoints = MutableStateFlow<Set<String>>(emptySet())
     val activeJoints: StateFlow<Set<String>> = _activeJoints.asStateFlow()
 
-    // Guardamos el valor actual de cada slider (Map de nombre -> valor)
     private val _jointValues = MutableStateFlow<Map<String, Float>>(emptyMap())
     val jointValues: StateFlow<Map<String, Float>> = _jointValues.asStateFlow()
 
-    // Controla si ya hemos enviado el START al backend
     private var isControlActive = false
+
+    // ==========================================
+    // MEMORIA DEL ESCUDO (Más limpia y robusta)
+    // ==========================================
+    private val lastTimes = mutableMapOf<String, Long>()
+    private val lastValues = mutableMapOf<String, Float>()
+    private val lastSentTimes = mutableMapOf<String, Long>()
+
+    private val lockedJoints = mutableSetOf<String>()
+
+    private val MAX_SPEED_RAD_S = 2.0f
+    // Máximo salto permitido en 1 solo "frame". 0.15 rads = ~8.5 grados.
+    // Es imposible arrastrar tanto de golpe, por lo que detecta "toques" instantáneos.
+    private val MAX_JUMP_RAD = 0.30f
+
+    private val SEND_INTERVAL_MS = 50L
 
     fun toggleJoint(jointName: String, isChecked: Boolean) {
         val currentActive = _activeJoints.value.toMutableSet()
-
         if (isChecked) {
             currentActive.add(jointName)
-            // Si es la primera articulación que activamos, abrimos la puerta en el backend
             if (currentActive.size == 1 && !isControlActive) {
                 director.sendStartMovement(customTopic = "", type = AppConstants.ControlType.JOINT)
                 isControlActive = true
             }
         } else {
             currentActive.remove(jointName)
-            // Si quitamos el tick de la última, cerramos la puerta
+            // Limpieza total
+            lastTimes.remove(jointName)
+            lastValues.remove(jointName)
+            lastSentTimes.remove(jointName)
+            lockedJoints.remove(jointName)
+
             if (currentActive.isEmpty() && isControlActive) {
                 director.sendStopMovement(type = AppConstants.ControlType.JOINT)
                 isControlActive = false
@@ -47,25 +63,80 @@ class JointControlViewModel(
     }
 
     fun updateJointValue(jointName: String, newValue: Float) {
-        // Actualizamos el estado de la UI
+        if (lockedJoints.contains(jointName)) return
+
+        val currentTime = System.currentTimeMillis()
         val currentValues = _jointValues.value.toMutableMap()
+
+        val lastTime = lastTimes[jointName] ?: currentTime
+        val lastVal = lastValues[jointName] ?: currentValues[jointName] ?: newValue
+
+        val dt = (currentTime - lastTime) / 1000f
+        val jumpDistance = abs(newValue - lastVal)
+
+        var isViolation = false
+
+        // 1. ANTIMISILES: Detectar "Toques" directos en la barra (Saltos sin tiempo)
+        if (jumpDistance > MAX_JUMP_RAD) {
+            isViolation = true
+        }
+        // 2. RADAR DE VELOCIDAD: Analizar arrastres continuos cada 100ms
+        else if (dt >= 0.1f) {
+            val speed = jumpDistance / dt
+            if (speed > MAX_SPEED_RAD_S) {
+                isViolation = true
+            } else {
+                // Es un movimiento seguro, avanzamos nuestra memoria base
+                lastTimes[jointName] = currentTime
+                lastValues[jointName] = newValue
+            }
+        }
+        // 3. INICIALIZACIÓN: El primer instante en que se toca
+        else if (lastTime == currentTime) {
+            lastTimes[jointName] = currentTime
+            lastValues[jointName] = newValue
+        }
+
+        // --- GESTIÓN DE INFRACCIONES ---
+        if (isViolation) {
+            lockedJoints.add(jointName)
+            director.stateManager.showSystemAlert("⚠️ Movimiento bloqueado.\n\nHas movido la barra demasiado rápido o has tocado en un extremo de golpe. Levanta el dedo para continuar.")
+
+            currentValues[jointName] = lastVal
+            _jointValues.value = currentValues
+            director.sendJointCommand(jointName, lastVal)
+            return
+        }
+
+        // --- MOVIMIENTO NORMAL ---
         currentValues[jointName] = newValue
         _jointValues.value = currentValues
 
-        // Enviamos la orden física al robot
-        director.sendJointCommand(jointName, newValue)
+        val lastSent = lastSentTimes[jointName] ?: 0L
+        if (currentTime - lastSent >= SEND_INTERVAL_MS) {
+            director.sendJointCommand(jointName, newValue)
+            lastSentTimes[jointName] = currentTime
+        }
     }
 
-    // Se llamará cuando el usuario abandone la pantalla (botón atrás o menú lateral)
+    fun onJointDragFinished(jointName: String) {
+        lockedJoints.remove(jointName)
+        // ¡ESTO ARREGLA EL PROBLEMA DE SER RESTRICTIVO!
+        // Borramos también la posición vieja para no arrastrar "fantasmas"
+        lastTimes.remove(jointName)
+        lastValues.remove(jointName)
+    }
+
     fun onScreenDisposed() {
         if (isControlActive) {
             director.sendStopMovement(type = AppConstants.ControlType.JOINT)
             isControlActive = false
             _activeJoints.value = emptySet()
         }
-
-        // ¡NUEVO! Vaciamos la memoria local de los sliders.
-        // Así, la próxima vez que entremos, leerá la posición real del robot.
         _jointValues.value = emptyMap()
+        lastTimes.clear()
+        lastValues.clear()
+        lastSentTimes.clear()
+        lockedJoints.clear()
     }
 }
