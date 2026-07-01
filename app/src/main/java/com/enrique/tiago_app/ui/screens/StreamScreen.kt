@@ -3,11 +3,17 @@ package com.enrique.tiago_app.ui.screens
 import android.annotation.SuppressLint
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 
@@ -36,17 +42,20 @@ fun StreamView(
     val isStreaming = monitorState == AppConstants.MonitorState.RECIBIENDO_STREAM
 
     // 3. Variables para controlar si los menús están abiertos o cerrados
-    var resourceMenuExpanded by remember { mutableStateOf(false) }
     var topicMenuExpanded by remember { mutableStateOf(false) } // ¡NUEVO! Para el topic
     var qualityMenuExpanded by remember { mutableStateOf(false) }
 
     // Opciones de los menús
-    val resourceOptions = listOf("camera")
     val qualityOptions = mapOf(
         "Alta" to AppConstants.CameraQuality.HIGH,
         "Media" to AppConstants.CameraQuality.MEDIUM,
         "Baja" to AppConstants.CameraQuality.LOW
     )
+
+    // El recurso siempre es "camera" (ya no hay selector). Lo fijamos por si acaso.
+    LaunchedEffect(Unit) {
+        if (currentResource.isBlank()) streamViewModel.updateResource("camera")
+    }
 
     // ¡MAGIA! Auto-selección de la cámara principal por defecto
     LaunchedEffect(cameraTopics) {
@@ -75,42 +84,10 @@ fun StreamView(
             // MODO FORMULARIO (Sensor Apagado)
             // ==========================================
             Text(
-                text = "Configuración de Sensores",
+                text = "Configuración de la Cámara",
                 style = if (isCompact) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineMedium
             )
             Spacer(modifier = Modifier.height(if (isCompact) 8.dp else 24.dp))
-
-            // --- DESPLEGABLE: RECURSO ---
-            ExposedDropdownMenuBox(
-                expanded = resourceMenuExpanded,
-                onExpandedChange = { if (!isLoading) resourceMenuExpanded = it }
-            ) {
-                OutlinedTextField(
-                    value = currentResource,
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text("Recurso a visualizar") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = resourceMenuExpanded) },
-                    colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
-                    modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth()
-                )
-                ExposedDropdownMenu(
-                    expanded = resourceMenuExpanded,
-                    onDismissRequest = { resourceMenuExpanded = false }
-                ) {
-                    resourceOptions.forEach { option ->
-                        DropdownMenuItem(
-                            text = { Text(option) },
-                            onClick = {
-                                streamViewModel.updateResource(option)
-                                resourceMenuExpanded = false
-                            }
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(if (isCompact) 4.dp else 12.dp))
 
             // --- ¡NUEVO! DESPLEGABLE: TOPIC DE LA CÁMARA ---
             ExposedDropdownMenuBox(
@@ -199,7 +176,7 @@ fun StreamView(
                         color = MaterialTheme.colorScheme.onPrimary
                     )
                 } else {
-                    Text("Ver Sensor")
+                    Text("Ver Cámara", color = Color.White, fontWeight = FontWeight.Bold)
                 }
             }
 
@@ -207,49 +184,120 @@ fun StreamView(
             // ==========================================
             // MODO VISUALIZACIÓN (Sensor Encendido)
             // ==========================================
-            if (!isCompact) {
-                Text(
-                    text = "Visualizando: $currentResource",
-                    style = MaterialTheme.typography.titleLarge
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-            }
+            val qualityLabel = qualityOptions.entries.find { it.value == currentQuality }?.key ?: "Media"
 
-            Box(
+            Surface(
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxWidth()
+                    .fillMaxWidth(),
+                shape = MaterialTheme.shapes.large,
+                color = Color(0xFF14171C),   // negro/gris muy oscuro tipo visor
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
             ) {
-                if (streamUrl != null) {
-                    AndroidView(
-                        factory = { context ->
-                            WebView(context).apply {
-                                webViewClient = WebViewClient()
-                                settings.javaScriptEnabled = true
-                                settings.loadWithOverviewMode = true
-                                settings.useWideViewPort = true
-                                loadUrl(streamUrl!!)
-                            }
-                        },
-                        modifier = Modifier.fillMaxSize(),
-                        onRelease = { webView -> webView.destroy() }
+                Box(Modifier.fillMaxSize()) {
+                    // El vídeo, recortado a las esquinas de la tarjeta
+                    if (streamUrl != null) {
+                        AndroidView(
+                            factory = { context ->
+                                WebView(context).apply {
+                                    webViewClient = WebViewClient()
+                                    settings.javaScriptEnabled = true
+                                    settings.loadWithOverviewMode = true
+                                    settings.useWideViewPort = true
+                                    loadUrl(streamUrl!!)
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(MaterialTheme.shapes.large),
+                            onRelease = { webView -> webView.destroy() }
+                        )
+                    } else {
+                        Text(
+                            "Error: URL no disponible",
+                            color = Color.White.copy(alpha = 0.7f),
+                            modifier = Modifier.align(Alignment.Center)
+                        )
+                    }
+
+                    // --- Etiqueta LIVE (arriba izquierda) ---
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(12.dp)
+                            .clip(MaterialTheme.shapes.small)
+                            .background(Color.Black.copy(alpha = 0.55f))
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                    ) {
+                        Box(
+                            Modifier
+                                .size(8.dp)
+                                .clip(androidx.compose.foundation.shape.CircleShape)
+                                .background(MaterialTheme.colorScheme.error)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "LIVE",
+                            color = Color.White,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    // --- Franja inferior: topic · calidad ---
+                    Text(
+                        text = "$currentTopic · $qualityLabel",
+                        color = if (isCompact) Color.White else Color.DarkGray.copy(alpha = 0.75f),
+                        style = com.enrique.tiago_app.ui.theme.MonoLabel,
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .padding(12.dp)
                     )
-                } else {
-                    Text("Error: URL no disponible", modifier = Modifier.align(Alignment.Center))
+
+                    // --- Botón STOP compacto superpuesto (solo en pantalla dividida) ---
+                    if (isCompact) {
+                        FilledIconButton(
+                            onClick = { streamViewModel.toggleStream() },
+                            enabled = !isLoading,
+                            colors = IconButtonDefaults.filledIconButtonColors(
+                                containerColor = MaterialTheme.colorScheme.error,
+                                contentColor = Color.White
+                            ),
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(12.dp)
+                                .size(40.dp)
+                        ) {
+                            if (isLoading) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    color = Color.White,
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Icon(Icons.Default.Stop, contentDescription = "Detener Cámara")
+                            }
+                        }
+                    }
                 }
             }
 
-            Spacer(modifier = Modifier.height(if (isCompact) 4.dp else 16.dp))
+            // En modo dividido (compacto) el stop va superpuesto sobre el vídeo,
+            // así que el botón grande de abajo solo se muestra a pantalla completa.
+            if (!isCompact) {
+                Spacer(modifier = Modifier.height(16.dp))
 
-            Button(
-                onClick = { streamViewModel.toggleStream() },
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                modifier = Modifier.fillMaxWidth().height(if (isCompact) 40.dp else 50.dp)
-            ) {
-                if (isLoading) {
-                    CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.onError)
-                } else {
-                    Text("Detener Sensor")
+                Button(
+                    onClick = { streamViewModel.toggleStream() },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    modifier = Modifier.fillMaxWidth().height(50.dp)
+                ) {
+                    if (isLoading) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.onError)
+                    } else {
+                        Text("Detener Cámara", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }

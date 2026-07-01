@@ -10,11 +10,15 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 // Importamos tu ViewModel y Constantes
 import com.enrique.tiago_app.ui.logic.InvestigationViewModel
+import com.enrique.tiago_app.ui.theme.MonoData
+import com.enrique.tiago_app.ui.theme.MonoLabel
 import com.enrique.tiago_app.utils.AppConstants
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -33,12 +37,6 @@ fun InvestigationScreen(viewModel: InvestigationViewModel) {
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         // --- SECCIÓN 1: PESTAÑAS DE SELECCIÓN ---
-        Text(
-            text = "Explorador de Nodos ROS 2",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold
-        )
-
         // Usamos una fila de botones tipo "Chip" para elegir qué queremos ver
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -64,23 +62,28 @@ fun InvestigationScreen(viewModel: InvestigationViewModel) {
         // --- SECCIÓN 2: BOTÓN DE PETICIÓN ---
         Button(
             onClick = { viewModel.fetchNetworkInfo() },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+            shape = MaterialTheme.shapes.small,
             // Bloqueamos el botón si ya estamos cargando datos
             enabled = !isLoading
         ) {
             if (isLoading) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(24.dp),
-                    color = MaterialTheme.colorScheme.onPrimary,
+                    color = Color.White,
                     strokeWidth = 2.dp
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Obteniendo datos...")
+                Text("Obteniendo datos...", color = Color.White, fontWeight = FontWeight.Bold)
             } else {
-                Icon(Icons.Default.Refresh, contentDescription = "Listar")
+                Icon(Icons.Default.Refresh, contentDescription = "Listar", tint = Color.White)
                 Spacer(modifier = Modifier.width(8.dp))
                 // El texto del botón cambia dinámicamente según lo seleccionado
-                Text("Listar ${selectedResource.replaceFirstChar { it.uppercase() }}")
+                Text(
+                    "Listar ${selectedResource.replaceFirstChar { it.uppercase() }}",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
 
@@ -88,15 +91,36 @@ fun InvestigationScreen(viewModel: InvestigationViewModel) {
         OutlinedTextField(
             value = searchText,
             onValueChange = { viewModel.updateSearchText(it) },
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("Buscar por nombre o tipo (ej: pose, twist)...") },
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Buscar") },
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 52.dp),
+            placeholder = {
+                Text(
+                    "Buscar (ej: pose, twist)…",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            leadingIcon = {
+                Icon(
+                    Icons.Default.Search,
+                    contentDescription = "Buscar",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
+                )
+            },
+            textStyle = MaterialTheme.typography.bodyMedium,
+            shape = MaterialTheme.shapes.medium,
             singleLine = true,
+            colors = OutlinedTextFieldDefaults.colors(
+                unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                focusedContainerColor = MaterialTheme.colorScheme.surface,
+            ),
             // Habilitamos la barra solo si hay datos en la lista para buscar
             enabled = filteredList.isNotEmpty() || searchText.isNotEmpty()
         )
-
-        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
         // --- SECCIÓN 4: LISTA DE RESULTADOS ---
         Box(modifier = Modifier.fillMaxSize()) {
@@ -128,29 +152,36 @@ fun InvestigationScreen(viewModel: InvestigationViewModel) {
 // Componente visual independiente para cada fila de la lista
 @Composable
 fun RosNodeCard(name: String, types: List<String>) {
-    ElevatedCard(
+    val cs = MaterialTheme.colorScheme
+    Surface(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.elevatedCardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-        )
+        shape = MaterialTheme.shapes.medium,
+        color = cs.surface,
+        border = androidx.compose.foundation.BorderStroke(1.dp, cs.outline)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            // Nombre del Topic/Service/Action (Grande)
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+            // Nombre del Topic/Service/Action en monoespaciada negrita
             Text(
                 text = name,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
+                style = MonoData.copy(fontSize = 15.sp),
+                color = cs.onSurface
             )
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
-            // Lista de tipos debajo (Pequeño)
+            // Tipos: "Tipo:" en gris + valor en cian, todo monoespaciado
             types.forEach { type ->
-                Text(
-                    text = "Tipo: $type",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Row {
+                    Text(
+                        text = "Tipo: ",
+                        style = MonoLabel,
+                        color = cs.onSurfaceVariant
+                    )
+                    Text(
+                        text = type,
+                        style = MonoLabel,
+                        color = cs.primary
+                    )
+                }
             }
         }
     }

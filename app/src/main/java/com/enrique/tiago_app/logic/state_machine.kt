@@ -49,6 +49,9 @@ class ProtocolStateManager {
     // ¡NUEVO! Memoria para saber qué streams exactos están abiertos
     private val activeStreams = mutableSetOf<String>()
 
+    // ¡NUEVO! Memoria para saber si estamos dentro del robot o en el lobby
+    var isRobotSessionActive = false
+
     fun clearSystemAlert() {
         _systemAlert.value = null
     }
@@ -249,6 +252,7 @@ class ProtocolStateManager {
                 AppConstants.Action.CONNECT -> {
                     if (_globalState.value != AppConstants.GlobalState.ESPERANDO_INICIO_SESION) return false
                     if (success && isCorrectPayload) {
+                        isRobotSessionActive = true
                         transitionGlobal(AppConstants.GlobalState.SESION_INICIADA)
                         transitionMovement(AppConstants.MovementState.IDLE)
                     } else {
@@ -262,6 +266,7 @@ class ProtocolStateManager {
                 AppConstants.Action.DISCONNECT -> {
                     if (_globalState.value != AppConstants.GlobalState.ESPERANDO_CIERRE_SESION) return false
                     if (success && isCorrectPayload) {
+                        isRobotSessionActive = false
                         transitionGlobal(AppConstants.GlobalState.CONEXION_BACKEND)
                         transitionMovement(AppConstants.MovementState.IDLE)
                     } else {
@@ -278,6 +283,7 @@ class ProtocolStateManager {
                 AppConstants.Action.SHUTDOWN -> {
                     if (_globalState.value != AppConstants.GlobalState.ESPERANDO_DESCONEXION_BACKEND) return false
                     if (success && isCorrectPayload) {
+                        isRobotSessionActive = false
                         triggerFullReset()
                     } else {
                         transitionGlobal(AppConstants.GlobalState.CONEXION_BACKEND)
@@ -309,11 +315,13 @@ class ProtocolStateManager {
 
             val isCorrectPayload = respMsg.payload is QueryRespPayload
 
-            // ¡CORRECCIÓN! Volvemos al estado correcto según lo que habíamos pedido
-            if (reqMsg.payload.resourceType == AppConstants.Resource.HOST_INFO) {
-                transitionGlobal(AppConstants.GlobalState.CONEXION_BACKEND) // Si es telemetría, volvemos a la Sala
+            // MAGIA: Ahora usamos la "memoria" en lugar del tipo de mensaje.
+            // Da igual si hemos pedido Batería o CPU; el semáforo nos devolverá
+            // exactamente a la pantalla desde la que hicimos la petición.
+            if (isRobotSessionActive) {
+                transitionGlobal(AppConstants.GlobalState.SESION_INICIADA)
             } else {
-                transitionGlobal(AppConstants.GlobalState.SESION_INICIADA) // Para lo demás, volvemos al Robot
+                transitionGlobal(AppConstants.GlobalState.CONEXION_BACKEND)
             }
 
             // Si hubo un error en la obtención de datos, avisamos al usuario
@@ -515,6 +523,7 @@ class ProtocolStateManager {
         transitionMovement(AppConstants.MovementState.IDLE)
         transitionMonitor(AppConstants.MonitorState.IDLE)
         activeStreams.clear()
+        isRobotSessionActive = false
     }
 
     // Llamado si se corta el WebSocket o hacemos 'END'
@@ -524,6 +533,7 @@ class ProtocolStateManager {
         transitionMovement(AppConstants.MovementState.IDLE)
         transitionMonitor(AppConstants.MonitorState.IDLE)
         activeStreams.clear()
+        isRobotSessionActive = false
     }
 
     // ==========================================

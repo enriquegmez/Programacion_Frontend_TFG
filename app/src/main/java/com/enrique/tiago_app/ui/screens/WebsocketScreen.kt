@@ -7,11 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -20,10 +16,12 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 
 // IMPORTS DE TU ARQUITECTURA
+import com.enrique.tiago_app.ui.components.PrimaryActionButton
 import com.enrique.tiago_app.ui.logic.MainViewModel
 import com.enrique.tiago_app.utils.AppConstants
 
@@ -51,9 +49,9 @@ fun WebsocketScreen(viewModel: MainViewModel) {
     ) {
         // Título
         Text(
-            text = "Conexión con Tiago",
+            text = "Conexión Websocket",
             style = MaterialTheme.typography.headlineMedium,
-            color = MaterialTheme.colorScheme.primary
+            color = MaterialTheme.colorScheme.onBackground
         )
 
         Spacer(modifier = Modifier.height(32.dp))
@@ -84,25 +82,13 @@ fun WebsocketScreen(viewModel: MainViewModel) {
         Spacer(modifier = Modifier.height(32.dp))
 
         // Botón de Conectar
-        Button(
+        PrimaryActionButton(
+            text = "Abrir WebSocket",
             onClick = { viewModel.connectToWebSocket() },
-            modifier = Modifier
-                .fillMaxWidth(0.8f)
-                .height(50.dp),
-            enabled = !isConnecting // Evita el doble click accidental
-        ) {
-            // Si está conectando, mostramos un Spinner; si no, el texto normal
-            if (isConnecting) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(24.dp),
-                    color = MaterialTheme.colorScheme.onPrimary,
-                    strokeWidth = 2.dp
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Conectando...")
-            } else {
-                Text("Abrir WebSocket")
-            }
-        }
+            modifier = Modifier.fillMaxWidth(0.8f),
+            enabled = !isConnecting, // Evita el doble click accidental
+            loading = isConnecting,
+            onContainer = Color.White
+        )
     }
 }

@@ -7,7 +7,7 @@ package com.enrique.tiago_app.utils
  */
 object AppConstants {
 
-    const val DEFAULT_SERVER_IP = "192.168.68.83"
+    const val DEFAULT_SERVER_IP = "192.168.68.89"
     const val DEFAULT_SERVER_PORT = 8765
 
     // ==========================================

@@ -27,7 +27,7 @@ import kotlin.math.sin
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SensorScreen(viewModel: SensorViewModel) {
+fun SensorScreen(viewModel: SensorViewModel, isCompact: Boolean = false) {
 
     val availableSensors by viewModel.availableSensors.collectAsState()
     val activeSensorTopics by viewModel.activeSensorTopics.collectAsState()
@@ -62,8 +62,10 @@ fun SensorScreen(viewModel: SensorViewModel) {
                 )
             }
         } else {
-            Text("Selecciona las gráficas a mostrar:", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-            Spacer(modifier = Modifier.height(8.dp))
+            if (!isCompact) {
+                Text("Selecciona las gráficas a mostrar:", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Spacer(modifier = Modifier.height(8.dp))
+            }
 
             // Fila con Scroll Horizontal Seguro
             Row(

@@ -5,132 +5,127 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.Color
+import com.enrique.tiago_app.ui.components.JoystickComponent
+import com.enrique.tiago_app.ui.components.MonoValue
 import com.enrique.tiago_app.ui.logic.ControlViewModel
 import com.enrique.tiago_app.utils.AppConstants
-import com.enrique.tiago_app.ui.components.JoystickComponent
 
-@OptIn(ExperimentalMaterial3Api::class) // Necesario para el ExposedDropdownMenuBox
+/* ============================================================================
+ *  TELEOPERACIÓN (REFACTOR VISUAL AXON)
+ *  Lógica intacta: movementState, targetTopic, onTopicChange, toggleTeleop,
+ *  updateJoystick, auto-selección del primer topic, mismo isCompact.
+ *  Diseño alineado con la maqueta: caja de topic con label flotante, switch
+ *  en azul de marca, joystick claro y lectura v/w en vivo (monoespaciada).
+ * ========================================================================== */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun JoystickView(
     controlViewModel: ControlViewModel,
-    teleopTopics: List<String>, // ¡NUEVO! Recibimos la lista de topics seguros
+    teleopTopics: List<String>,
     isCompact: Boolean = false
 ) {
-    // 1. Observamos el estado
     val movState by controlViewModel.movementState.collectAsState()
     val topicText by controlViewModel.targetTopic.collectAsState()
-
-    // 2. Variables derivadas
-    val isTeleopActive = (movState == AppConstants.MovementState.ENVIANDO_INFO)
+    val liveV by controlViewModel.liveV.collectAsState()
+    val liveW by controlViewModel.liveW.collectAsState()
+    val isTeleopActive = movState == AppConstants.MovementState.ENVIANDO_INFO
     val isLoading = movState.startsWith("ESPERANDO_")
-
-    // Estado para saber si el desplegable está abierto o cerrado
     var expanded by remember { mutableStateOf(false) }
+    val cs = MaterialTheme.colorScheme
 
-    // ¡MAGIA! Si la lista tiene elementos pero no hemos seleccionado nada,
-    // auto-seleccionamos el primero (que es el de máxima prioridad según Python)
     LaunchedEffect(teleopTopics) {
-        if (topicText.isBlank() && teleopTopics.isNotEmpty()) {
-            controlViewModel.onTopicChange(teleopTopics.first())
-        }
+        if (topicText.isBlank() && teleopTopics.isNotEmpty()) controlViewModel.onTopicChange(teleopTopics.first())
     }
 
-    // 3. UI
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(if (isCompact) 4.dp else 16.dp),
+        Modifier.fillMaxSize().padding(if (isCompact) 8.dp else 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.SpaceEvenly
     ) {
-        // --- BLOQUE SUPERIOR ---
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-
+        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
             if (!isCompact) {
-                Text(
-                    text = "Teleoperación",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(24.dp))
-            }
-
-            // --- EL NUEVO MENÚ DESPLEGABLE ---
-            if (!isCompact) {
+                // Caja de topic con label flotante (como en la maqueta)
                 ExposedDropdownMenuBox(
                     expanded = expanded,
-                    onExpandedChange = {
-                        // Solo permitimos abrirlo si los motores están apagados y no está cargando
-                        if (!isTeleopActive && !isLoading && teleopTopics.isNotEmpty()) {
-                            expanded = it
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(0.8f)
+                    onExpandedChange = { if (!isTeleopActive && !isLoading && teleopTopics.isNotEmpty()) expanded = it },
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     OutlinedTextField(
-                        // Mostrar un aviso si el robot por algún motivo no tiene topics
                         value = if (teleopTopics.isEmpty()) "Ningún topic detectado" else topicText,
-                        onValueChange = {},
-                        readOnly = true, // Evita que aparezca el teclado del móvil
+                        onValueChange = {}, readOnly = true,
                         label = { Text("Topic de Teleoperación") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                        colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
                         enabled = !isTeleopActive && !isLoading,
-                        modifier = Modifier.menuAnchor() // Imprescindible para que el menú se ancle aquí
+                        shape = MaterialTheme.shapes.small,
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
                     )
-
-                    // La lista de opciones que cae hacia abajo
-                    ExposedDropdownMenu(
-                        expanded = expanded,
-                        onDismissRequest = { expanded = false }
-                    ) {
+                    ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                         teleopTopics.forEach { topic ->
-                            DropdownMenuItem(
-                                text = { Text(topic) },
-                                onClick = {
-                                    controlViewModel.onTopicChange(topic)
-                                    expanded = false
-                                }
-                            )
+                            DropdownMenuItem(text = { Text(topic) }, onClick = { controlViewModel.onTopicChange(topic); expanded = false })
                         }
                     }
                 }
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(Modifier.height(24.dp))
             }
 
-            // INTERRUPTOR DE MOTORES
+            // Interruptor de motores — AZUL de marca cuando armado
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = if (isTeleopActive) "Motores Armados" else "Motores Bloqueados",
-                    style = if (isCompact) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.titleMedium
+                    if (isTeleopActive) "Motores Armados" else "Motores Bloqueados",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = cs.onSurface
                 )
-                Spacer(modifier = Modifier.width(16.dp))
-                if (isLoading) {
-                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                } else {
-                    Switch(
-                        checked = isTeleopActive,
-                        onCheckedChange = { controlViewModel.toggleTeleop(it) },
-                        modifier = if (isCompact) Modifier.scale(0.8f) else Modifier,
-                        // ¡NUEVO! Bloqueamos el switch si no hay topic seleccionado
-                        enabled = topicText.isNotBlank()
+                Spacer(Modifier.width(14.dp))
+                if (isLoading) CircularProgressIndicator(Modifier.size(24.dp))
+                else Switch(
+                    checked = isTeleopActive,
+                    onCheckedChange = { controlViewModel.toggleTeleop(it) },
+                    enabled = topicText.isNotBlank(),
+                    colors = SwitchDefaults.colors(
+                        // Cuando está ENCENDIDO (Armado)
+                        checkedTrackColor = cs.primary,     // Azul (el que ya tenías)
+                        checkedThumbColor = Color.White,    // Blanco
+                        checkedBorderColor = cs.primary,
+
+                        // Cuando está APAGADO (Bloqueado)
+                        uncheckedTrackColor = Color.Gray,   // <--- CAMBIA ESTO A COLOR.GRAY O EL GRIS QUE QUIERAS
+                        uncheckedThumbColor = cs.surface,
+                        uncheckedBorderColor = Color.Gray   // <--- OPCIONAL: Cambia el borde también para que sea gris
                     )
-                }
+                )
             }
         }
 
-        // --- BLOQUE CENTRAL (Joystick) ---
-        val joystickSize = 250.dp
-
         JoystickComponent(
-            size = joystickSize,
+            size = if (isCompact) 180.dp else 240.dp,
             isEnabled = isTeleopActive,
-            onVelocityChanged = { v, w ->
-                controlViewModel.updateJoystick(v, w)
-            }
+            onVelocityChanged = { v, w -> controlViewModel.updateJoystick(v, w) }
         )
+
+        if (!isCompact) {
+            // Lectura en vivo de velocidades (monoespaciada). Muestra el valor real
+            // que se está enviando; 0.00 cuando el joystick está centrado o bloqueado.
+            Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
+                MonoValue(
+                    value = formatVel(if (isTeleopActive) liveV else 0f),
+                    label = "linear v (m/s)",
+                    tint = cs.onSurface
+                )
+                MonoValue(
+                    value = formatVel(if (isTeleopActive) liveW else 0f),
+                    label = "angular w (rad/s)",
+                    tint = cs.onSurface
+                )
+            }
+        }
     }
+}
+
+/** Formatea una velocidad a 2 decimales, evitando el "-0.00". */
+private fun formatVel(value: Float): String {
+    val v = if (value == 0f || (value > -0.005f && value < 0.005f)) 0f else value
+    return String.format("%.2f", v)
 }

@@ -67,7 +67,11 @@ fun PlayMotionScreen(
             if (!isCompact) {
                 Button(
                     onClick = { viewModel.fetchAvailableActions() },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary, // O el color que uses de fondo
+                        contentColor = Color.White // Esto pone tanto el Icono como el Texto en blanco
+                )
                 ) {
                     Icon(Icons.Default.Refresh, contentDescription = "Actualizar")
                     Spacer(modifier = Modifier.width(8.dp))
@@ -101,7 +105,7 @@ fun PlayMotionScreen(
                                 .clip(RoundedCornerShape(8.dp))
                                 .clickable { viewModel.selectAction(actionName) },
                             colors = CardDefaults.elevatedCardColors(
-                                containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+                                containerColor = if (isSelected) Color.LightGray else MaterialTheme.colorScheme.surface
                             )
                         ) {
                             Text(
@@ -123,7 +127,8 @@ fun PlayMotionScreen(
                 enabled = selectedAction != null, // Solo se activa si has tocado uno
                 colors = ButtonDefaults.buttonColors(
                     containerColor = Color(0xFF4CAF50), // Verde
-                    disabledContainerColor = Color.LightGray
+                    disabledContainerColor = Color.LightGray,
+                    contentColor = Color.White
                 ),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -178,7 +183,8 @@ fun PlayMotionScreen(
                             enabled = !isStopping, // Si ya le hemos dado, lo bloqueamos para no spamear
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = MaterialTheme.colorScheme.error,
-                                disabledContainerColor = Color.Gray
+                                disabledContainerColor = Color.Gray,
+                                contentColor = Color.White
                             ),
                             modifier = Modifier
                                 .fillMaxWidth()

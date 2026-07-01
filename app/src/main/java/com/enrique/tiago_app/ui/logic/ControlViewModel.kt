@@ -31,6 +31,14 @@ class ControlViewModel(
     private val _targetTopic = MutableStateFlow("")
     val targetTopic: StateFlow<String> = _targetTopic.asStateFlow()
 
+    // Velocidades actuales publicadas para que la UI las muestre en vivo.
+    private val _liveV = MutableStateFlow(0f)
+    val liveV: StateFlow<Float> = _liveV.asStateFlow()
+
+    private val _liveW = MutableStateFlow(0f)
+    val liveW: StateFlow<Float> = _liveW.asStateFlow()
+
+
     // ==========================================
     // 2. MEMORIA DEL JOYSTICK
     // ==========================================
@@ -80,6 +88,9 @@ class ControlViewModel(
     fun updateJoystick(v: Float, w: Float) {
         currentV = v
         currentW = w
+        _liveV.value = v
+        _liveW.value = w
+
     }
 
     fun toggleTeleop(enable: Boolean) {
@@ -89,10 +100,16 @@ class ControlViewModel(
         if (enable) {
             currentV = 0f
             currentW = 0f
+            _liveV.value = 0f
+            _liveW.value = 0f
+
             director.sendStartMovement(_targetTopic.value)
         } else {
             currentV = 0f
             currentW = 0f
+            _liveV.value = 0f
+            _liveW.value = 0f
+
             director.sendStopMovement()
         }
     }

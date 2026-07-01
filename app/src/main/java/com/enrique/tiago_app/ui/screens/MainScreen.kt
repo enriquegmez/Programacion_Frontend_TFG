@@ -1,27 +1,19 @@
 package com.enrique.tiago_app.ui.screens
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.BatteryFull
-import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.launch
 
-// Tus ViewModels
+// Tus ViewModels y utilidades
 import com.enrique.tiago_app.ui.logic.ControlViewModel
 import com.enrique.tiago_app.ui.logic.MainViewModel
 import com.enrique.tiago_app.ui.logic.StreamViewModel
@@ -30,9 +22,13 @@ import com.enrique.tiago_app.ui.logic.PlayMotionViewModel
 import com.enrique.tiago_app.ui.logic.InvestigationViewModel
 import com.enrique.tiago_app.ui.logic.JointControlViewModel
 import com.enrique.tiago_app.ui.logic.SensorViewModel
-import com.enrique.tiago_app.ui.screens.JointControlScreen
-import com.enrique.tiago_app.ui.screens.InvestigationScreen
 import com.enrique.tiago_app.utils.AppConstants
+
+// Componentes AXON (Asegúrate de que la ruta del paquete de los componentes sea correcta en tu proyecto)
+import com.enrique.tiago_app.ui.components.AxonBottomBar
+import com.enrique.tiago_app.ui.components.ScreenHeader
+import com.enrique.tiago_app.ui.components.SplitSegmentedControl
+import com.enrique.tiago_app.ui.components.SplitTopSourceControl
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -48,249 +44,146 @@ fun MainScreen(
     // Observamos en qué pantalla estamos
     val currentScreen by mainViewModel.currentScreen.collectAsState()
 
-    // ¡NUEVO! Lista de pantallas que admiten la división
+    // Lista de pantallas que admiten la división
     val splitAllowedScreens = listOf(AppScreen.TELEOP, AppScreen.PLAY_MOTION, AppScreen.ARTICULACIONES)
 
     // Estados locales para controlar la pantalla dividida
     var isSplitScreen by remember { mutableStateOf(false) }
-    // ¡NUEVO! Estado para saber qué ver en la mitad de arriba (Por defecto Cámara)
     var topScreenSelection by remember { mutableStateOf(AppScreen.CAMERA) }
-
-    // Herramientas para el menú lateral
-    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
-    val scope = rememberCoroutineScope()
 
     val movState by controlViewModel.movementState.collectAsState()
     val isTeleopActive = (movState == AppConstants.MovementState.ENVIANDO_INFO)
 
     val robotData by mainViewModel.robotCapabilities.collectAsState()
-    val hasBase = robotData?.capabilities?.hasBase == true
     val hasCameras = robotData?.capabilities?.cameras?.isNotEmpty() == true
+    val hasBase = robotData?.capabilities?.hasBase == true
     val hasPlayMotion = robotData?.capabilities?.hasPlayMotion == true
+    // Articulaciones controlables (mismo campo que usabas en el menú lateral antiguo)
     val hasJoints = robotData?.capabilities?.controlableJoints?.isNotEmpty() == true
+    // Sensores: se descubren aparte (no vienen en capabilities). Si el ViewModel
+    // expone la lista, la usamos; si no, dejamos Sensores siempre habilitado.
+    val hasSensors = true // TODO: enlazar con availableSensors cuando se exponga en MainViewModel
 
-    // ¡CAMBIO! Reseteo total al cambiar de pestaña
+    // Rutas habilitadas según el hardware detectado. Las que no estén aquí
+    // aparecen en gris y no se puede navegar a ellas (ni en modo dividido).
+    val enabledRoutes: Set<String> = buildSet {
+        add("dashboard")                 // siempre
+        add("invest")                    // análisis: siempre
+        if (hasSensors) add("sensors")
+        if (hasJoints) add("joints")
+        if (hasBase) add("teleop")
+        if (hasCameras) add("camera")
+        if (hasPlayMotion) add("motion")
+    }
+
+    // Estado del velo blanco a pantalla completa cuando se abre un grupo del menú.
+    var menuOpen by remember { mutableStateOf(false) }
+    var closeMenuSignal by remember { mutableStateOf(0) }
+
+    // Reseteo total al cambiar de pestaña
     LaunchedEffect(currentScreen) {
-        // Se resetea la division y la selección superior al cambiar de pantalla
         isSplitScreen = false
         topScreenSelection = AppScreen.CAMERA
 
-        // Si el robot estaba en movimiento en TELEOP, mandamos la señal de STOP al salir
         if (currentScreen != AppScreen.TELEOP && isTeleopActive) {
             controlViewModel.toggleTeleop(false)
         }
     }
 
-    ModalNavigationDrawer(
-        drawerState = drawerState,
-        drawerContent = {
-            ModalDrawerSheet(modifier = Modifier.width(300.dp)) {
-                Spacer(Modifier.height(24.dp))
-                Text(
-                    text = "Panel de Control",
-                    style = MaterialTheme.typography.headlineSmall,
-                    modifier = Modifier.padding(16.dp)
-                )
-                HorizontalDivider()
+    // Texto de cabecera (eyebrow + título) por pantalla. La cabecera es común.
+    val (headerEyebrow, headerTitle) = when (currentScreen) {
+        AppScreen.DASHBOARD -> "Resumen" to "Dashboard"
+        AppScreen.TELEOP -> "Control" to "Teleoperación"
+        AppScreen.CAMERA -> "Datos" to "Cámara"
+        AppScreen.PLAY_MOTION -> "Control" to "Acciones"
+        AppScreen.INVESTIGACION -> "Datos" to "Investigación"
+        AppScreen.ARTICULACIONES -> "Control" to "Articulaciones"
+        AppScreen.SENSORES -> "Datos" to "Sensores"
+    }
 
-                NavigationDrawerItem(
-                    label = { Text("Dashboard (Inicio)") },
-                    selected = currentScreen == AppScreen.DASHBOARD,
-                    onClick = {
-                        mainViewModel.navigateTo(AppScreen.DASHBOARD)
-                        scope.launch { drawerState.close() }
-                    },
-                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
-                )
+    // Adaptamos tu ENUM AppScreen a los String-Rutas del nuevo menú
+    val currentRouteString = when (currentScreen) {
+        AppScreen.DASHBOARD -> "dashboard"
+        AppScreen.TELEOP -> "teleop"
+        AppScreen.CAMERA -> "camera"
+        AppScreen.PLAY_MOTION -> "motion"
+        AppScreen.INVESTIGACION -> "invest"
+        AppScreen.ARTICULACIONES -> "joints"
+        AppScreen.SENSORES -> "sensors"
+    }
 
-                NavigationDrawerItem(
-                    label = { Text(if (hasBase) "Teleoperación" else "Teleoperación (No Disp.)") },
-                    selected = currentScreen == AppScreen.TELEOP,
-                    onClick = {
-                        if (hasBase) {
-                            mainViewModel.navigateTo(AppScreen.TELEOP)
-                            scope.launch { drawerState.close() }
-                        }
-                    },
-                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
-                    badge = { if (!hasBase) Icon(Icons.Default.Close, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
-                )
+    // Función puente para navegar usando tu MainViewModel
+    fun navigateFromAxonMenu(route: String) {
+        // Defensa extra: si la ruta está deshabilitada por capacidades, ignorar.
+        if (route !in enabledRoutes) return
 
-                NavigationDrawerItem(
-                    label = { Text(if (hasCameras) "Cámara / Sensores" else "Cámaras (No Disp.)") },
-                    selected = currentScreen == AppScreen.CAMERA,
-                    onClick = {
-                        if (hasCameras) {
-                            mainViewModel.navigateTo(AppScreen.CAMERA)
-                            scope.launch { drawerState.close() }
-                        }
-                    },
-                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
-                    badge = { if (!hasCameras) Icon(Icons.Default.Close, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
-                )
-
-                NavigationDrawerItem(
-                    label = { Text(if (hasPlayMotion) "Movimientos Predefinidos" else "Movimientos (No Disp.)") },
-                    selected = currentScreen == AppScreen.PLAY_MOTION,
-                    onClick = {
-                        if (hasPlayMotion) {
-                            mainViewModel.navigateTo(AppScreen.PLAY_MOTION)
-                            scope.launch { drawerState.close() }
-                        }
-                    },
-                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
-                    badge = { if (!hasPlayMotion) Icon(Icons.Default.Close, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
-                )
-
-                NavigationDrawerItem(
-                    label = { Text("Investigación (ROS 2)") },
-                    selected = currentScreen == AppScreen.INVESTIGACION,
-                    onClick = {
-                        mainViewModel.navigateTo(AppScreen.INVESTIGACION)
-                        scope.launch { drawerState.close() }
-                    },
-                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
-                    icon = { Icon(Icons.Default.Info, contentDescription = null) }
-                )
-
-                NavigationDrawerItem(
-                    label = { Text(if (hasJoints) "Mover Articulaciones" else "Articulaciones (No Disp.)") },
-                    selected = currentScreen == AppScreen.ARTICULACIONES,
-                    onClick = {
-                        if (hasJoints) {
-                            mainViewModel.navigateTo(AppScreen.ARTICULACIONES)
-                            scope.launch { drawerState.close() }
-                        }
-                    },
-                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
-                    badge = { if (!hasJoints) Icon(Icons.Default.Close, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
-                )
-
-                NavigationDrawerItem(
-                    label = { Text("Telemetría (Sensores)") },
-                    selected = currentScreen == AppScreen.SENSORES,
-                    onClick = {
-                        mainViewModel.navigateTo(AppScreen.SENSORES)
-                        scope.launch { drawerState.close() }
-                    },
-                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
-                    icon = { Icon(Icons.Default.Info, contentDescription = null) }
-                )
-
-                Spacer(Modifier.weight(1f))
-
-                Button(
-                    onClick = { mainViewModel.disconnectFromRobot() },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp)
-                ) {
-                    Text("Desconectar Robot")
-                }
-            }
+        val nextScreen = when (route) {
+            "dashboard" -> AppScreen.DASHBOARD
+            "teleop" -> AppScreen.TELEOP
+            "camera" -> AppScreen.CAMERA
+            "motion" -> AppScreen.PLAY_MOTION
+            "invest" -> AppScreen.INVESTIGACION
+            "joints" -> AppScreen.ARTICULACIONES
+            "sensors" -> AppScreen.SENSORES
+            else -> AppScreen.DASHBOARD
         }
-    ) {
+        mainViewModel.navigateTo(nextScreen)
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
             topBar = {
-                TopAppBar(
-                    title = { // ¡CAMBIO! Solo mostramos el título si NO estamos en pantalla dividida
-                        if (!isSplitScreen) {
-                            Text(text = "Tiago App")
-                        }
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                            Icon(Icons.Default.Menu, contentDescription = "Abrir Menú")
-                        }
-                    },
-                    actions = {
-                        val batteryPct = robotData?.status?.batteryPct
-                        if (batteryPct != null) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                val batteryColor = when {
-                                    batteryPct > 50 -> Color(0xFF4CAF50)
-                                    batteryPct > 25 -> Color(0xFFFFA000)
-                                    else -> MaterialTheme.colorScheme.error
-                                }
+                // ==========================================
+                // CABECERA COMÚN (RESUMEN / Título + batería)
+                // ==========================================
+                val batteryPct = robotData?.status?.batteryPct
+                val isCharging = robotData?.status?.isCharging == true
 
-                                val isCharging = robotData?.status?.isCharging == true
-
-                                Icon(
-                                    imageVector = if (isCharging) Icons.Default.Bolt else Icons.Default.BatteryFull,
-                                    contentDescription = "Batería",
-                                    tint = if (isCharging) Color(0xFFFFEB3B) else batteryColor,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "${batteryPct.toInt()}%",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = batteryColor
-                                )
-                                Spacer(modifier = Modifier.width(16.dp))
-                            }
-                        } else {
-                            // ¡NUEVO! Mostrar batería gris si es nula
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.BatteryFull,
-                                    contentDescription = "Batería Desconocida",
-                                    tint = Color.Gray,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("?%", style = MaterialTheme.typography.titleMedium, color = Color.Gray)
-                                Spacer(modifier = Modifier.width(16.dp))
-                            }
-                        }
-
-                        // ¡NUEVO! EL INTERRUPTOR DE PANTALLA DIVIDIDA Y SELECTOR
-                        val isSplitAllowed = currentScreen in splitAllowedScreens
-                        if (isSplitAllowed) {
-
-                            // Botón dinámico que solo aparece si la pantalla está dividida
-                            if (isSplitScreen) {
-                                TextButton(
-                                    onClick = {
-                                        topScreenSelection = if (topScreenSelection == AppScreen.CAMERA) AppScreen.SENSORES else AppScreen.CAMERA
-                                    }
-                                ) {
-                                    Text(
-                                        text = if (topScreenSelection == AppScreen.CAMERA) "Ver Sensores" else "Ver Cámara",
-                                        color = MaterialTheme.colorScheme.primary,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
-
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "Dividir",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Switch(
-                                    checked = isSplitScreen,
-                                    onCheckedChange = { isSplitScreen = it },
-                                    modifier = Modifier.scale(0.8f)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                            }
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.background)
+                        .statusBarsPadding()
+                ) {
+                    ScreenHeader(
+                        eyebrow = headerEyebrow,
+                        title = headerTitle,
+                        batteryPct = batteryPct,
+                        isCharging = isCharging
                     )
-                )
+
+                    // Controles de pantalla dividida (solo en pantallas que lo permiten)
+                    val isSplitAllowed = currentScreen in splitAllowedScreens
+                    if (isSplitAllowed) {
+                        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+                            SplitSegmentedControl(
+                                split = isSplitScreen,
+                                onSplitChange = { isSplitScreen = it }
+                            )
+                            if (isSplitScreen) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                SplitTopSourceControl(
+                                    topIsCamera = (topScreenSelection == AppScreen.CAMERA) && hasCameras,
+                                    onSelect = { isCam ->
+                                        topScreenSelection = if (isCam && hasCameras) AppScreen.CAMERA else AppScreen.SENSORES
+                                    },
+                                    cameraEnabled = hasCameras
+                                )
+                            }
+                        }
+                    }
+                }
             }
         ) { innerPadding ->
-            Box(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .padding(innerPadding)
+                    .fillMaxSize()
+                    .padding(bottom = 96.dp)   // hueco para la barra flotante (que ya no está en el Scaffold)
+            ) {
 
                 // ==========================================
-                // LÓGICA DE VISUALIZACIÓN DIVIDIDA
+                // LÓGICA DE VISUALIZACIÓN DIVIDIDA (Intacta)
                 // ==========================================
                 if (isSplitScreen && currentScreen in splitAllowedScreens) {
                     Column(modifier = Modifier.fillMaxSize()) {
@@ -306,33 +199,24 @@ fun MainScreen(
                                     )
                                 } else {
                                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                        Icon(
-                                            imageVector = Icons.Default.Info,
-                                            contentDescription = "Sin Cámara",
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.size(48.dp)
-                                        )
+                                        Icon(Icons.Default.Info, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(48.dp))
                                         Spacer(modifier = Modifier.height(8.dp))
-                                        Text("El robot no tiene cámaras disponibles", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text("El robot no tiene cámaras", color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                 }
                             } else if (topScreenSelection == AppScreen.SENSORES) {
-                                // La pantalla de sensores se adapta automáticamente a la mitad del espacio
-                                SensorScreen(viewModel = sensorViewModel)
+                                SensorScreen(viewModel = sensorViewModel, isCompact = true)
                             }
                         }
 
-                        HorizontalDivider(
-                            thickness = 3.dp,
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
-                        )
+                        HorizontalDivider(thickness = 3.dp, color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
 
                         // MITAD INFERIOR: La herramienta que estábamos usando
                         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                             when (currentScreen) {
                                 AppScreen.TELEOP -> JoystickView(controlViewModel = controlViewModel, teleopTopics = robotData?.capabilities?.teleopTopics ?: emptyList(), isCompact = true)
                                 AppScreen.PLAY_MOTION -> PlayMotionScreen(viewModel = playMotionViewModel, isCompact = true)
-                                AppScreen.ARTICULACIONES -> JointControlScreen(viewModel = jointControlViewModel)
+                                AppScreen.ARTICULACIONES -> JointControlScreen(viewModel = jointControlViewModel, isCompact = true)
                                 else -> {}
                             }
                         }
@@ -345,7 +229,6 @@ fun MainScreen(
                         AppScreen.DASHBOARD -> DashboardView(mainViewModel)
                         AppScreen.TELEOP -> JoystickView(controlViewModel = controlViewModel, teleopTopics = robotData?.capabilities?.teleopTopics ?: emptyList())
                         AppScreen.CAMERA -> StreamView(streamViewModel = streamViewModel, cameraTopics = robotData?.capabilities?.cameraTopics ?: emptyList())
-                        // ¡CAMBIO! Añadimos isCompact = true
                         AppScreen.PLAY_MOTION -> PlayMotionScreen(viewModel = playMotionViewModel)
                         AppScreen.INVESTIGACION -> InvestigationScreen(viewModel = investigationViewModel)
                         AppScreen.ARTICULACIONES -> JointControlScreen(viewModel = jointControlViewModel)
@@ -354,156 +237,39 @@ fun MainScreen(
                 }
             }
         }
-    }
-}
 
-// ... [Aquí sigues dejando tu función DashboardView y CapabilityRow tal y como las tienes] ...
-
-// ========================================================
-// ¡NUEVO! EL COMPONENTE VISUAL DEL DASHBOARD
-// ========================================================
-@Composable
-fun DashboardView(mainViewModel: MainViewModel) {
-    val robotData by mainViewModel.robotCapabilities.collectAsState()
-
-    // 1. ¡MUEVE ESTO AQUÍ ARRIBA!
-    // Así la memoria del scroll sobrevive a las actualizaciones.
-    val scrollState = rememberScrollState()
-
-    // 2. Estado de Carga (Esperando JSON)
-    if (robotData == null) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                CircularProgressIndicator()
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(text = "Escaneando hardware del robot...", style = MaterialTheme.typography.bodyLarge)
-            }
-        }
-        return
-    }
-
-    val identity = robotData!!.identity
-    val status = robotData!!.status
-    val caps = robotData!!.capabilities!!
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            // 3. USA LA VARIABLE AQUÍ
-            .verticalScroll(scrollState)
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        // --- SECCIÓN 1: ESTADO Y SALUD ---
-        ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text("Salud del Sistema", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Batería blindada
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    val isCharging = status?.isCharging == true
-                    val batPct = status?.batteryPct
-
-                    Icon(
-                        imageVector = if (isCharging) Icons.Default.Bolt else Icons.Default.BatteryFull,
-                        contentDescription = "Batería",
-                        tint = if (batPct == null) Color.Gray else if (isCharging) Color(0xFFFFEB3B) else Color(0xFF4CAF50)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    Text(
-                        text = if (batPct == null) "Batería: Desconocida"
-                        else if (isCharging) "Cargando... (${batPct}%)"
-                        else "Batería: ${batPct}%",
-                        color = if (batPct == null) Color.Gray else Color.Unspecified
-                    )
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                LinearProgressIndicator(
-                    progress = { ((status?.batteryPct ?: 0.0) / 100.0).toFloat() },
-                    modifier = Modifier.fillMaxWidth(),
-                    color = if (status?.batteryPct == null) Color.LightGray else Color(0xFF4CAF50)
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Parada de Emergencia blindada
-                val eStop = status?.eStopActive
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    val (iconTint, textStr, textColor) = when (eStop) {
-                        true -> Triple(MaterialTheme.colorScheme.error, "¡Parada de Emergencia ACTIVADA!", MaterialTheme.colorScheme.error)
-                        false -> Triple(Color(0xFF4CAF50), "E-Stop Desactivado (Seguro)", MaterialTheme.colorScheme.onSurface)
-                        null -> Triple(Color.Gray, "Estado E-Stop: Desconocido", Color.Gray)
-                    }
-
-                    Icon(
-                        imageVector = Icons.Default.Warning,
-                        contentDescription = "E-Stop",
-                        tint = iconTint
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = textStr, color = textColor)
-                }
-            }
+        // --- VELO BLANCO a PANTALLA COMPLETA cuando el menú está desplegado ---
+        androidx.compose.animation.AnimatedVisibility(
+            visible = menuOpen,
+            enter = androidx.compose.animation.fadeIn(),
+            exit = androidx.compose.animation.fadeOut()
+        ) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(Color.White.copy(alpha = 0.85f))
+                    .clickable(
+                        indication = null,
+                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                    ) { closeMenuSignal++ }
+            )
         }
 
-        // --- SECCIÓN 2: IDENTIDAD EN RED ---
-        ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Info, contentDescription = "Red")
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Identidad de Red (ROS 2)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(text = "Hostname: ${identity?.hostname ?: "Desconocido"}")
-                Text(text = "ROS Domain ID: ${identity?.domainId ?: "0"}")
-            }
+        // --- BARRA FLOTANTE AXON (siempre por encima del velo) ---
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .navigationBarsPadding(),
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            AxonBottomBar(
+                currentRoute = currentRouteString,
+                enabledRoutes = enabledRoutes,
+                onNavigate = { navigateFromAxonMenu(it) },
+                onDisconnect = { mainViewModel.disconnectFromRobot() },
+                onOpenChange = { menuOpen = it },
+                closeSignal = closeMenuSignal
+            )
         }
-
-        // --- SECCIÓN 3: CAPACIDADES HARDWARE ---
-        Text("Capacidades Detectadas", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
-
-        // Lista de características usando un helper para simplificar código
-        CapabilityRow("Base Móvil (Twist)", caps.hasBase)
-        CapabilityRow("Manipulador (Brazo)", caps.hasManipulator)
-        CapabilityRow("Cabeza", caps.hasHead)
-        CapabilityRow("Torso", caps.hasTorso)
-        CapabilityRow("Actuador Final (Gripper)", caps.hasGripper)
-        CapabilityRow("LiDAR (LaserScan/PointCloud)", caps.hasLidar)
-        CapabilityRow("IMU (Sensor Inercial)", caps.hasImu)
-        CapabilityRow("Odometría", caps.hasOdom)
-        CapabilityRow("Navegación (Nav2)", caps.hasNav)
-        CapabilityRow("Planificación (MoveIt)", caps.hasMoveit)
-        CapabilityRow("Movimientos grabados (PlayMotion)", caps.hasPlayMotion ?: false)
-        CapabilityRow("Sensor de Fuerza-Par (F/T)", caps.hasFtSensor ?: false)
-
-        // Resumen de Cámaras
-        ElevatedCard(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text("Cámaras Físicas: ${caps.cameras.size}", fontWeight = FontWeight.Bold)
-                caps.cameras.forEach { cam ->
-                    Text("• ${cam.name}", style = MaterialTheme.typography.bodyMedium)
-                }
-            }
-        }
-    }
-}
-
-// Helper composable para pintar una fila de característica con su tick verde o cruz roja
-@Composable
-fun CapabilityRow(name: String, available: Boolean) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Text(text = name, style = MaterialTheme.typography.bodyLarge)
-        Icon(
-            imageVector = if (available) Icons.Default.CheckCircle else Icons.Default.Close,
-            contentDescription = if (available) "Disponible" else "No Disponible",
-            tint = if (available) Color(0xFF4CAF50) else MaterialTheme.colorScheme.error
-        )
     }
 }

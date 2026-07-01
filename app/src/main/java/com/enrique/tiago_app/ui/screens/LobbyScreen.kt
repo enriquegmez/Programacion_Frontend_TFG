@@ -1,22 +1,28 @@
 package com.enrique.tiago_app.ui.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Computer
-import androidx.compose.material.icons.filled.NetworkWifi
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.enrique.tiago_app.ui.components.DangerButton
+import com.enrique.tiago_app.ui.components.PrimaryActionButton
+import com.enrique.tiago_app.ui.components.SectionTitle
+import com.enrique.tiago_app.ui.components.SteelCard
 import com.enrique.tiago_app.ui.logic.LobbyViewModel
 import com.enrique.tiago_app.utils.AppConstants
 
@@ -120,218 +126,189 @@ fun LobbyScreen(viewModel: LobbyViewModel) {
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
+            .padding(start = 16.dp, end = 16.dp, top = 48.dp, bottom = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         // --- CABECERA ---
-        Icon(Icons.Default.CheckCircle, contentDescription = "OK", tint = Color(0xFF4CAF50), modifier = Modifier.size(48.dp))
-        Spacer(modifier = Modifier.height(8.dp))
-        Text("Conexión Establecida", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        Text("Sala de configuración previa", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Box(
+            modifier = Modifier
+                .size(64.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.12f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.Default.CheckCircle,
+                contentDescription = "OK",
+                tint = MaterialTheme.colorScheme.tertiary,
+                modifier = Modifier.size(34.dp)
+            )
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+            "Enlace Establecido",
+            style = MaterialTheme.typography.headlineMedium,
+            color = MaterialTheme.colorScheme.onBackground
+        )
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            "Sala de configuración previa",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
         Spacer(modifier = Modifier.height(24.dp))
 
         if (telemetry == null) {
-            CircularProgressIndicator()
+            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
             Spacer(modifier = Modifier.height(8.dp))
-            Text("Leyendo sensores del PC...")
+            Text("Leyendo configuración del robot...")
         } else {
             val t = telemetry!!
 
-            // --- TARJETA 1: TELEMETRÍA DEL HOST ---
-            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Computer, contentDescription = "PC")
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Salud del PC (Host)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    }
-                    Spacer(modifier = Modifier.height(16.dp))
+            // --- TARJETA: ENTORNO DE RED ROS 2 ---
+            SteelCard {
+                SectionTitle("Entorno de Red (${t.rosDistro ?: "Desconocido"})", icon = Icons.Outlined.Wifi)
+                Spacer(modifier = Modifier.height(16.dp))
 
-                    // --- CPU ---
-                    val safeCpu = t.cpuPct ?: 0.0
-                    Text(if (t.cpuPct != null) "Carga CPU: ${t.cpuPct}%" else "Carga CPU: Desconocida")
-                    LinearProgressIndicator(
-                        progress = { (safeCpu / 100).toFloat() },
-                        modifier = Modifier.fillMaxWidth().height(8.dp),
-                        color = if (safeCpu > 85) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = editedDomainId,
+                    onValueChange = { editedDomainId = it },
+                    label = { Text("ROS_DOMAIN_ID") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    shape = MaterialTheme.shapes.small
+                )
 
-                    // --- RAM ---
-                    val safeRamPct = t.ramPct ?: 0.0
-                    Text(if (t.ramPct != null && t.ramUsedGb != null)
-                        "RAM: ${t.ramUsedGb} GB / ${t.ramTotalGb} GB (${t.ramPct}%)"
-                    else "RAM: Desconocida")
-                    LinearProgressIndicator(
-                        progress = { (safeRamPct / 100).toFloat() },
-                        modifier = Modifier.fillMaxWidth().height(8.dp),
-                        color = if (safeRamPct > 85) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
-                    // --- TEMPERATURA ---
-                    if (t.tempC != null && t.tempC > 0) {
-                        Text("Temperatura: ${t.tempC} ºC", color = if (t.tempC > 75) MaterialTheme.colorScheme.error else Color.Unspecified)
-                    } else {
-                        Text("Temperatura: Sensor no detectado", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // --- TARJETA 2: RED ROS 2 ---
-            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.NetworkWifi, contentDescription = "Red")
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Entorno de Red (${t.rosDistro ?: "Desconocido"})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    }
-                    Spacer(modifier = Modifier.height(16.dp))
-
+                // Desplegable de DDS
+                ExposedDropdownMenuBox(
+                    expanded = isDropdownExpanded,
+                    onExpandedChange = { isDropdownExpanded = !isDropdownExpanded }
+                ) {
                     OutlinedTextField(
-                        value = editedDomainId,
-                        onValueChange = { editedDomainId = it },
-                        label = { Text("ROS_DOMAIN_ID") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
+                        value = editedDds,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Middleware (DDS)") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isDropdownExpanded) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth(),
+                        shape = MaterialTheme.shapes.small
                     )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // Desplegable de DDS
-                    ExposedDropdownMenuBox(
+                    ExposedDropdownMenu(
                         expanded = isDropdownExpanded,
-                        onExpandedChange = { isDropdownExpanded = !isDropdownExpanded }
+                        onDismissRequest = { isDropdownExpanded = false }
                     ) {
-                        OutlinedTextField(
-                            value = editedDds,
-                            onValueChange = {},
-                            readOnly = true,
-                            label = { Text("Middleware (DDS)") },
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isDropdownExpanded) },
-                            modifier = Modifier.menuAnchor().fillMaxWidth()
-                        )
-                        ExposedDropdownMenu(
-                            expanded = isDropdownExpanded,
-                            onDismissRequest = { isDropdownExpanded = false }
-                        ) {
-                            val safeDdsList = t.availableDds ?: emptyList()
+                        val safeDdsList = t.availableDds ?: emptyList()
 
-                            if (safeDdsList.isEmpty()) {
-                                DropdownMenuItem(text = { Text("No se detectaron DDS") }, onClick = { })
-                            } else {
-                                safeDdsList.forEach { ddsOption ->
-                                    DropdownMenuItem(
-                                        text = { Text(ddsOption) },
-                                        onClick = {
-                                            editedDds = ddsOption
-                                            isDropdownExpanded = false
-                                        }
-                                    )
-                                }
+                        if (safeDdsList.isEmpty()) {
+                            DropdownMenuItem(text = { Text("No se detectaron DDS") }, onClick = { })
+                        } else {
+                            safeDdsList.forEach { ddsOption ->
+                                DropdownMenuItem(
+                                    text = { Text(ddsOption) },
+                                    onClick = {
+                                        editedDds = ddsOption
+                                        isDropdownExpanded = false
+                                    }
+                                )
                             }
                         }
                     }
+                }
 
-                    if (editedDds.contains("fastrtps", ignoreCase = true)) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-                        ) {
-                            Checkbox(
-                                checked = editedUseDiscovery,
-                                onCheckedChange = { editedUseDiscovery = it }
-                            )
-                            Text("Habilitar FastDDS Discovery Server", style = MaterialTheme.typography.bodyMedium)
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    val hasChanges = editedDomainId != t.rosDomainId ||
-                            editedDds != t.currentDds ||
-                            editedUseDiscovery != t.useDiscovery
-                    Button(
-                        onClick = {
-                            viewModel.saveNetworkConfig(editedDomainId, editedDds, editedUseDiscovery)
-                            showNetworkSavedDialog = true
-                        },
-                        enabled = hasChanges && !isBusy,
-                        modifier = Modifier.fillMaxWidth()
+                if (editedDds.contains("fastrtps", ignoreCase = true)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
                     ) {
-                        if (isSavingNetwork) {
-                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                        } else {
-                            Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(20.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Guardar y Aplicar")
-                        }
+                        Checkbox(
+                            checked = editedUseDiscovery,
+                            onCheckedChange = { editedUseDiscovery = it }
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Habilitar FastDDS Discovery Server", style = MaterialTheme.typography.bodyLarge)
                     }
                 }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                val hasChanges = editedDomainId != t.rosDomainId ||
+                        editedDds != t.currentDds ||
+                        editedUseDiscovery != t.useDiscovery
+
+                PrimaryActionButton(
+                    text = "Guardar y Aplicar",
+                    onClick = {
+                        viewModel.saveNetworkConfig(editedDomainId, editedDds, editedUseDiscovery)
+                        showNetworkSavedDialog = true
+                    },
+                    enabled = hasChanges && !isBusy,
+                    icon = Icons.Default.Save,
+                    loading = isSavingNetwork,
+                    onContainer = Color.White
+                )
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // --- TARJETA 3: ENERGÍA ---
-            ElevatedCard(
+            // --- TARJETA: ENERGÍA ---
+            Surface(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.25f))
             ) {
                 Row(
                     modifier = Modifier.padding(16.dp).fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     OutlinedButton(
                         onClick = { showRebootDialog = true },
                         enabled = !isBusy,
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onErrorContainer)
+                        modifier = Modifier.weight(1f).height(56.dp),
+                        shape = MaterialTheme.shapes.small,
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f))
                     ) {
-                        Icon(Icons.Default.RestartAlt, contentDescription = null)
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Reiniciar")
+                        Icon(Icons.Default.RestartAlt, contentDescription = null, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Reiniciar", fontWeight = FontWeight.Bold)
                     }
 
-                    Button(
+                    DangerButton(
+                        text = "Apagar",
                         onClick = { showShutdownDialog = true },
-                        enabled = !isBusy,
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                    ) {
-                        Icon(Icons.Default.PowerSettingsNew, contentDescription = null)
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Apagar")
-                    }
+                        modifier = Modifier.weight(1f),
+                        icon = Icons.Default.PowerSettingsNew,
+                        enabled = !isBusy
+                    )
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(24.dp))
 
         // --- BOTÓN GIGANTE: ENTRAR A ROS 2 ---
-        Button(
+        PrimaryActionButton(
+            text = "CONECTAR AL ROBOT",
             onClick = { viewModel.connectToRobot() },
-            modifier = Modifier.fillMaxWidth().height(55.dp),
             enabled = !isBusy && telemetry != null,
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))
-        ) {
-            if (isLoggingIn) {
-                CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Arrancando Nodos ROS 2...")
-            } else {
-                Text("CONECTAR AL ROBOT", fontWeight = FontWeight.Bold)
-            }
-        }
+            loading = isLoggingIn,
+            container = MaterialTheme.colorScheme.tertiary,
+            onContainer = MaterialTheme.colorScheme.onTertiary
+        )
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
         OutlinedButton(
             onClick = { viewModel.disconnectFromServer() },
             modifier = Modifier.fillMaxWidth().height(50.dp),
-            enabled = !isBusy
+            enabled = !isBusy,
+            shape = MaterialTheme.shapes.small,
+            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
         ) {
-            Text("Volver al Inicio (Desconectar)", color = MaterialTheme.colorScheme.error)
+            Text("Volver al Inicio (Desconectar)", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
         }
 
         Spacer(modifier = Modifier.height(32.dp))

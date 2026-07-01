@@ -39,23 +39,38 @@ class MainViewModel(
     private var pollingJob: Job? = null
 
     // ==========================================
-    // ¡NUEVO! SISTEMA DE ACTUALIZACIÓN CONTINUA
+    // ¡NUEVO! SISTEMA DE ACTUALIZACIÓN CONTINUA (TICK-TOCK)
     // ==========================================
     private fun startPolling() {
         // Si el bucle ya está funcionando, no hacemos nada
         if (pollingJob?.isActive == true) return
 
         pollingJob = viewModelScope.launch {
+            // ¡NUEVO! Variable para alternar los mensajes y no pisarlos
+            var askForRobotData = true
+
             // Bucle infinito que durará hasta que alguien llame a stopPolling()
             while (isActive) {
-                // Para no saturar al servidor, solo pedimos si la app está tranquila (SESION_INICIADA).
-                // Si el semáforo está bloqueado porque estamos pidiendo otra cosa, nos saltamos este turno.
+                // Solo pedimos si el semáforo está en verde (SESION_INICIADA)
                 if (director.stateManager.globalState.value == AppConstants.GlobalState.SESION_INICIADA) {
-                    director.sendRequestRobotInfo()
+
+                    if (askForRobotData) {
+                        // TURNO 1: Pedir estado del Robot (Batería, e-stop, etc)
+                        director.sendRequestRobotInfo()
+                    } else {
+                        // TURNO 2: Pedir telemetría del PC (CPU, RAM, Temp)
+                        // IMPORTANTE: Pon aquí el nombre exacto de la función que tienes en tu ProtocolDirector
+                        // (Suele ser algo como sendRequestHostTelemetry() o fetchTelemetry())
+                        director.requestHostTelemetry()
+                    }
+
+                    // Invertimos el interruptor para el siguiente ciclo
+                    askForRobotData = !askForRobotData
                 }
 
-                // Esperamos 5 segundos antes de volver a preguntar
-                delay(5000)
+                // Esperamos 2.5 segundos (la mitad de 5s).
+                // Cada dato se actualiza cada 5 segundos, pero las peticiones están separadas en el tiempo.
+                delay(2500)
             }
         }
     }
@@ -95,6 +110,9 @@ class MainViewModel(
     // ¡NUEVO! Pasillo directo hacia la radiografía del robot.
     // Jetpack Compose leerá esto para pintar los menús o deshabilitar botones.
     val robotCapabilities: StateFlow<RobotCapabilitiesData?> = director.robotCapabilities
+
+    // Añade esta línea para que el Dashboard pueda leer los sensores del PC
+    val hostTelemetry = director.hostTelemetry
 
     init {
         // Vigilante del estado global
