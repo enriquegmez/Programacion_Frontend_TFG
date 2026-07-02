@@ -164,13 +164,9 @@ private fun iconForSensor(type: String): ImageVector = when (type) {
 @Composable
 private fun SensorSelectChip(label: String, icon: ImageVector, selected: Boolean, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
-
-    // --- CAMBIOS AQUÍ: Usamos secondaryContainer y onSecondaryContainer ---
-    val container = if (selected) cs.secondaryContainer else cs.surface
-    // Si está seleccionado, hacemos el borde transparente para que quede igual que un FilterChip real
-    val border = if (selected) Color.Transparent else cs.outline
-    val content = if (selected) cs.onSecondaryContainer else cs.onSurfaceVariant
-
+    val container = if (selected) cs.primary.copy(alpha = 0.15f) else cs.surface
+    val border = if (selected) cs.primary.copy(alpha = 0.5f) else cs.outline
+    val content = if (selected) cs.primary else cs.onSurfaceVariant
     Surface(
         shape = MaterialTheme.shapes.small,
         color = container,
@@ -181,7 +177,6 @@ private fun SensorSelectChip(label: String, icon: ImageVector, selected: Boolean
             Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // El icono también heredará el color onSecondaryContainer
             Icon(icon, null, tint = content, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(6.dp))
             Text(label, style = MaterialTheme.typography.labelLarge, color = content, fontWeight = FontWeight.Bold)
