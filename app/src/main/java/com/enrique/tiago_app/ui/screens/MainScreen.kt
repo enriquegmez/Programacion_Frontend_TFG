@@ -28,7 +28,7 @@ import com.enrique.tiago_app.utils.AppConstants
 import com.enrique.tiago_app.ui.components.AxonBottomBar
 import com.enrique.tiago_app.ui.components.ScreenHeader
 import com.enrique.tiago_app.ui.components.SplitSegmentedControl
-import com.enrique.tiago_app.ui.components.SplitTopSourceControl
+import com.enrique.tiago_app.ui.components.SplitSourcePicker
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -50,6 +50,8 @@ fun MainScreen(
     // Estados locales para controlar la pantalla dividida
     var isSplitScreen by remember { mutableStateOf(false) }
     var topScreenSelection by remember { mutableStateOf(AppScreen.CAMERA) }
+    // Selector flotante Cámara/Sensores que aparece al pulsar "Dividida".
+    var showSourcePicker by remember { mutableStateOf(false) }
 
     val movState by controlViewModel.movementState.collectAsState()
     val isTeleopActive = (movState == AppConstants.MovementState.ENVIANDO_INFO)
@@ -159,31 +161,23 @@ fun MainScreen(
                             SplitSegmentedControl(
                                 split = isSplitScreen,
                                 onSplitChange = { split ->
-                                    isSplitScreen = split
-                                    // Al entrar en dividido, la fuente superior por defecto es la
-                                    // cámara. Apagamos sensores que pudieran seguir activos para que
-                                    // no dejen el monitor global ocupado y la cámara no herede su estado.
-                                    if (split) sensorViewModel.onScreenDisposed()
+                                    if (split) {
+                                        // Entrar en dividido: apagamos sensores que pudieran seguir
+                                        // activos y abrimos el selector flotante Cámara/Sensores.
+                                        sensorViewModel.onScreenDisposed()
+                                        isSplitScreen = true
+                                        // Si no hay cámara, el panel por defecto es sensores.
+                                        if (!hasCameras) topScreenSelection = AppScreen.SENSORES
+                                        showSourcePicker = true
+                                    } else {
+                                        // Volver a pantalla completa: cerramos el selector.
+                                        isSplitScreen = false
+                                        showSourcePicker = false
+                                    }
                                 }
                             )
-                            if (isSplitScreen) {
-                                Spacer(modifier = Modifier.height(8.dp))
-                                SplitTopSourceControl(
-                                    // CAMBIO 1: Quitamos el '&& hasCameras'
-                                    topIsCamera = (topScreenSelection == AppScreen.CAMERA),
-                                    onSelect = { isCam ->
-                                        // CAMBIO 2: Quitamos la condición de 'hasCameras' para dejarle entrar
-                                        if (isCam) {
-                                            sensorViewModel.onScreenDisposed()
-                                            topScreenSelection = AppScreen.CAMERA
-                                        } else {
-                                            topScreenSelection = AppScreen.SENSORES
-                                        }
-                                    },
-                                    // CAMBIO 3: Forzamos a true para que el botón nunca esté "gris" (deshabilitado)
-                                    cameraEnabled = true
-                                )
-                            }
+                            // El selector Cámara/Sensores ya no vive aquí fijo: aparece
+                            // flotante (más abajo) al pulsar "Dividida".
                         }
                     }
                 }
@@ -268,6 +262,22 @@ fun MainScreen(
                     ) { closeMenuSignal++ }
             )
         }
+
+        // --- SELECTOR FLOTANTE Cámara/Sensores (al pulsar "Dividida") ---
+        SplitSourcePicker(
+            visible = showSourcePicker,
+            cameraEnabled = hasCameras,
+            onSelectCamera = {
+                sensorViewModel.onScreenDisposed()
+                topScreenSelection = AppScreen.CAMERA
+                showSourcePicker = false
+            },
+            onSelectSensors = {
+                topScreenSelection = AppScreen.SENSORES
+                showSourcePicker = false
+            },
+            onDismiss = { showSourcePicker = false }
+        )
 
         // --- BARRA FLOTANTE AXON (siempre por encima del velo) ---
         Box(

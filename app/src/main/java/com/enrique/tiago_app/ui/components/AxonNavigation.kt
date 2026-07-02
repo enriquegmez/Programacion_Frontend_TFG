@@ -370,3 +370,103 @@ fun SplitTopSourceControl(
         ) { Text("Sensores") }
     }
 }
+/* ============================================================================
+ *  SELECTOR FLOTANTE DE FUENTE (Cámara / Sensores) para PANTALLA DIVIDIDA
+ *  Aparece al pulsar "Dividida". Velo blanco detrás (coherente con el speed-dial
+ *  del menú inferior) y dos opciones grandes. Al elegir, se cierra.
+ * ========================================================================== */
+@Composable
+fun SplitSourcePicker(
+    visible: Boolean,
+    cameraEnabled: Boolean,
+    onSelectCamera: () -> Unit,
+    onSelectSensors: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val cs = MaterialTheme.colorScheme
+
+    AnimatedVisibility(visible = visible, enter = fadeIn(), exit = fadeOut()) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.White.copy(alpha = 0.85f))
+                .clickable(
+                    indication = null,
+                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                ) { onDismiss() },
+            contentAlignment = Alignment.TopCenter
+        ) {
+            Column(
+                modifier = Modifier.padding(top = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Text(
+                    "¿Qué mostrar en el panel superior?",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = cs.onBackground
+                )
+
+                SourceOption(
+                    icon = Icons.Default.Videocam,
+                    label = "Cámara",
+                    enabled = cameraEnabled,
+                    onClick = { if (cameraEnabled) onSelectCamera() }
+                )
+                SourceOption(
+                    icon = Icons.Default.Insights,
+                    label = "Sensores",
+                    enabled = true,
+                    onClick = onSelectSensors
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SourceOption(
+    icon: ImageVector,
+    label: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val cs = MaterialTheme.colorScheme
+    val container = if (enabled) cs.surface else cs.surfaceVariant.copy(alpha = 0.6f)
+    val content = if (enabled) cs.primary else cs.onSurfaceVariant.copy(alpha = 0.5f)
+    val borderColor = if (enabled) cs.primary.copy(alpha = 0.4f) else cs.outline
+
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = container,
+        border = androidx.compose.foundation.BorderStroke(1.dp, borderColor),
+        shadowElevation = if (enabled) 6.dp else 0.dp,
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.width(220.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                Modifier.size(40.dp).clip(CircleShape).background(content.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(icon, contentDescription = label, tint = content, modifier = Modifier.size(22.dp))
+            }
+            Spacer(Modifier.width(14.dp))
+            Text(
+                label,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = if (enabled) cs.onSurface else content
+            )
+            if (!enabled) {
+                Spacer(Modifier.weight(1f))
+                Icon(Icons.Default.Lock, contentDescription = "No disponible", tint = content, modifier = Modifier.size(18.dp))
+            }
+        }
+    }
+}
