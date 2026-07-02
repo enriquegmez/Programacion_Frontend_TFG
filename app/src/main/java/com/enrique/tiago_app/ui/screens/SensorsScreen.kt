@@ -400,6 +400,11 @@ fun LaserScanView(scan: LaserScanData) {
     val midColor = cs.primary
     val farColor = cs.tertiary
 
+    // Offset de orientación (radianes). Con 0, el frente del robot (ángulo 0 del
+    // scan) queda ARRIBA. Si tu láser está montado girado, ajusta aquí:
+    //   atrás -> Math.PI  ·  90° -> Math.PI/2  ·  -90° -> -Math.PI/2
+    val orientationOffset = 0f
+
     Canvas(modifier = Modifier.fillMaxWidth().height(240.dp)) {
         val centerX = size.width / 2f
         val centerY = size.height / 2f
@@ -407,22 +412,31 @@ fun LaserScanView(scan: LaserScanData) {
         val scale = if (scan.rangeMax > 0f) maxPixels / scan.rangeMax else 10f
         val center = Offset(centerX, centerY)
 
-        // Cono frontal (hacia arriba): sector translúcido que marca el "frente"
+        // Proyección basada en la que ya funcionaba en la interfaz anterior
+        // (cos->X, sin->Y), con una rotación de -90° para que el ángulo 0 del
+        // escáner (frente del robot) apunte hacia ARRIBA en la pantalla.
+        fun project(theta: Float, range: Float): Offset {
+            val a = theta + orientationOffset - (Math.PI.toFloat() / 2f)
+            val sx = centerX + (range * cos(a) * scale)
+            val sy = centerY + (range * sin(a) * scale)
+            return Offset(sx, sy)
+        }
+
+        // Cono frontal (marca el frente del robot, hacia arriba)
         val conePath = Path().apply {
             moveTo(centerX, centerY)
             val half = 0.45f // ~26° a cada lado
             val steps = 12
             for (i in 0..steps) {
                 val a = -half + (2 * half) * (i / steps.toFloat())
-                val x = centerX - sin(a) * maxPixels
-                val y = centerY - cos(a) * maxPixels
-                lineTo(x.toFloat(), y.toFloat())
+                val p = project(a, scan.rangeMax)
+                lineTo(p.x, p.y)
             }
             close()
         }
         drawPath(conePath, cs.primary.copy(alpha = 0.06f))
 
-        // Anillos concéntricos etiquetados (a metros enteros hasta rangeMax)
+        // Anillos concéntricos
         val ringStep = when {
             scan.rangeMax <= 2f -> 0.5f
             scan.rangeMax <= 6f -> 1f
@@ -430,8 +444,7 @@ fun LaserScanView(scan: LaserScanData) {
         }
         var r = ringStep
         while (r <= scan.rangeMax) {
-            val radiusPx = r * scale
-            drawCircle(cs.outline.copy(alpha = 0.6f), radius = radiusPx, center = center, style = Stroke(width = 1f))
+            drawCircle(cs.outline.copy(alpha = 0.6f), radius = r * scale, center = center, style = Stroke(width = 1f))
             r += ringStep
         }
 
@@ -439,32 +452,39 @@ fun LaserScanView(scan: LaserScanData) {
         drawLine(cs.outline.copy(alpha = 0.4f), Offset(centerX, centerY - maxPixels), Offset(centerX, centerY + maxPixels), 1f)
         drawLine(cs.outline.copy(alpha = 0.4f), Offset(centerX - maxPixels, centerY), Offset(centerX + maxPixels, centerY), 1f)
 
-        // Puntos del láser con color según proximidad
+        // Puntos del láser
         scan.ranges.forEachIndexed { index, range ->
             if (range in scan.rangeMin..scan.rangeMax) {
-                val angle = scan.angleMin + (index * scan.angleIncrement)
-                val screenX = centerX - (range * sin(angle) * scale)
-                val screenY = centerY - (range * cos(angle) * scale)
+                val theta = scan.angleMin + (index * scan.angleIncrement)
+                val p = project(theta, range)
                 val frac = (range / scan.rangeMax).coerceIn(0f, 1f)
                 val dotColor = when {
                     frac < 0.33f -> nearColor
                     frac < 0.66f -> midColor
                     else -> farColor
                 }
-                drawCircle(dotColor, radius = 3f, center = Offset(screenX.toFloat(), screenY.toFloat()))
+                drawCircle(dotColor, radius = 3f, center = p)
             }
         }
+
+        // Marcador de FRENTE: flecha corta hacia arriba desde el robot
+        val frontTip = Offset(centerX, centerY - maxPixels * 0.9f)
+        drawLine(cs.primary, center, frontTip, strokeWidth = 3f, cap = StrokeCap.Round)
+        drawLine(cs.primary, frontTip, Offset(frontTip.x - 7f, frontTip.y + 10f), strokeWidth = 3f, cap = StrokeCap.Round)
+        drawLine(cs.primary, frontTip, Offset(frontTip.x + 7f, frontTip.y + 10f), strokeWidth = 3f, cap = StrokeCap.Round)
 
         // Robot en el centro
         drawCircle(cs.primary, radius = 7f, center = center)
         drawCircle(Color.White, radius = 3f, center = center)
     }
 
-    // Leyenda de colores por proximidad
+    // Leyenda
     Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         LegendDot(nearColor, "Cerca")
         LegendDot(midColor, "Medio")
         LegendDot(farColor, "Lejos")
+        Spacer(Modifier.weight(1f))
+        Text("↑ Frente", style = MonoLabel, color = cs.primary)
     }
 }
 
