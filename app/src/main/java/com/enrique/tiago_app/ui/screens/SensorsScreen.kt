@@ -280,12 +280,26 @@ private fun Sparkline(
     height: androidx.compose.ui.unit.Dp = 56.dp,
     minFloor: Number? = null,
     maxCeil: Number? = null,
+    minSpan: Float = 0f,   // rango vertical mínimo: evita amplificar ruido diminuto
 ) {
     val cs = MaterialTheme.colorScheme
     Canvas(modifier = modifier.fillMaxWidth().height(height)) {
         if (values.size < 2) return@Canvas
-        val minV = minFloor?.toFloat() ?: (values.min())
-        val maxV = maxCeil?.toFloat() ?: (values.max())
+        var minV = minFloor?.toFloat() ?: (values.min())
+        var maxV = maxCeil?.toFloat() ?: (values.max())
+
+        // Si el recorrido de los datos es menor que minSpan, ensanchamos el eje
+        // alrededor de su punto medio. Así una señal casi plana (ruido ~0) se dibuja
+        // plana en lugar de estirarse a picos falsos.
+        if (minFloor == null && maxCeil == null && minSpan > 0f) {
+            val realSpan = maxV - minV
+            if (realSpan < minSpan) {
+                val mid = (maxV + minV) / 2f
+                minV = mid - minSpan / 2f
+                maxV = mid + minSpan / 2f
+            }
+        }
+
         val span = (maxV - minV).takeIf { it > 1e-6f } ?: 1f
 
         val stepX = size.width / (values.size - 1)
@@ -431,7 +445,7 @@ private fun LegendDot(color: Color, label: String) {
     }
 }
 
-/* ---- IMU con horizonte artificial (roll/pitch) + cifras ------------------- */
+/* ---- IMU: horizonte artificial + cifras + gráficas de aceleración (plegables) */
 @Composable
 fun ImuView(imu: ImuData) {
     val cs = MaterialTheme.colorScheme
@@ -446,50 +460,106 @@ fun ImuView(imu: ImuData) {
     val animRoll by animateFloatAsState(roll, label = "roll")
     val animPitch by animateFloatAsState(pitch, label = "pitch")
 
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        // Horizonte artificial
-        Box(
-            Modifier.size(120.dp).clip(CircleShape).background(cs.surfaceVariant),
-            contentAlignment = Alignment.Center
-        ) {
-            Canvas(Modifier.fillMaxSize()) {
-                val w = size.width; val h = size.height
-                val cx = w / 2f; val cy = h / 2f
-                // desplazamiento vertical por pitch
-                val pitchOffset = (animPitch / (Math.PI.toFloat() / 2f)) * (h / 2f)
+    // Historiales de aceleración (uno por eje). Se llenan siempre, aunque el
+    // desplegable esté cerrado, para que al abrirlo ya haya traza dibujada.
+    val histX = rememberHistory(ax)
+    val histY = rememberHistory(ay)
+    val histZ = rememberHistory(az)
 
-                // cielo y suelo, rotados por roll
-                rotate(degrees = Math.toDegrees(animRoll.toDouble()).toFloat(), pivot = Offset(cx, cy)) {
-                    drawRect(Color(0xFF34D0DE).copy(alpha = 0.35f), topLeft = Offset(-w, -h + cy + pitchOffset), size = Size(w * 3f, h * 2f))
-                    drawRect(Color(0xFF8A92A3).copy(alpha = 0.5f), topLeft = Offset(-w, cy + pitchOffset), size = Size(w * 3f, h * 2f))
-                    // línea de horizonte
-                    drawLine(Color.White, Offset(-w, cy + pitchOffset), Offset(w * 2f, cy + pitchOffset), 2f)
+    var showAccelCharts by remember { mutableStateOf(false) }
+
+    Column(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            // Horizonte artificial
+            Box(
+                Modifier.size(120.dp).clip(CircleShape).background(cs.surfaceVariant),
+                contentAlignment = Alignment.Center
+            ) {
+                Canvas(Modifier.fillMaxSize()) {
+                    val w = size.width; val h = size.height
+                    val cx = w / 2f; val cy = h / 2f
+                    val pitchOffset = (animPitch / (Math.PI.toFloat() / 2f)) * (h / 2f)
+                    rotate(degrees = Math.toDegrees(animRoll.toDouble()).toFloat(), pivot = Offset(cx, cy)) {
+                        drawRect(Color(0xFF34D0DE).copy(alpha = 0.35f), topLeft = Offset(-w, -h + cy + pitchOffset), size = Size(w * 3f, h * 2f))
+                        drawRect(Color(0xFF8A92A3).copy(alpha = 0.5f), topLeft = Offset(-w, cy + pitchOffset), size = Size(w * 3f, h * 2f))
+                        drawLine(Color.White, Offset(-w, cy + pitchOffset), Offset(w * 2f, cy + pitchOffset), 2f)
+                    }
+                    drawLine(cs.primary, Offset(cx - 20f, cy), Offset(cx - 6f, cy), 3f)
+                    drawLine(cs.primary, Offset(cx + 6f, cy), Offset(cx + 20f, cy), 3f)
+                    drawCircle(cs.primary, radius = 3f, center = Offset(cx, cy))
                 }
-                // marca fija central (el "avión")
-                drawLine(cs.primary, Offset(cx - 20f, cy), Offset(cx - 6f, cy), 3f)
-                drawLine(cs.primary, Offset(cx + 6f, cy), Offset(cx + 20f, cy), 3f)
-                drawCircle(cs.primary, radius = 3f, center = Offset(cx, cy))
+            }
+
+            Spacer(Modifier.width(16.dp))
+
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                MetricLine("Roll", String.format("%+.1f°", Math.toDegrees(roll.toDouble())))
+                MetricLine("Pitch", String.format("%+.1f°", Math.toDegrees(pitch.toDouble())))
+                Spacer(Modifier.height(2.dp))
+                Text("Acel. lineal (m/s²)", style = MonoLabel, color = cs.onSurfaceVariant)
+                Text(
+                    String.format("X %.2f  Y %.2f  Z %.2f", ax, ay, az),
+                    style = MonoData.copy(fontSize = 13.sp), color = cs.onSurface
+                )
+                Text("Vel. angular (rad/s)", style = MonoLabel, color = cs.onSurfaceVariant)
+                Text(
+                    String.format("X %.2f  Y %.2f  Z %.2f", imu.angularVelocity.x, imu.angularVelocity.y, imu.angularVelocity.z),
+                    style = MonoData.copy(fontSize = 13.sp), color = cs.onSurface
+                )
             }
         }
 
-        Spacer(Modifier.width(16.dp))
+        // --- Botón que despliega las gráficas de aceleración ---
+        Spacer(Modifier.height(10.dp))
+        Surface(
+            shape = MaterialTheme.shapes.small,
+            color = cs.surfaceVariant.copy(alpha = 0.5f),
+            onClick = { showAccelCharts = !showAccelCharts },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    if (showAccelCharts) "Ocultar gráficas de aceleración" else "Ver gráficas de aceleración",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = cs.primary,
+                    fontWeight = FontWeight.Bold
+                )
+                Icon(
+                    if (showAccelCharts) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = null,
+                    tint = cs.primary
+                )
+            }
+        }
 
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            MetricLine("Roll", String.format("%+.1f°", Math.toDegrees(roll.toDouble())))
-            MetricLine("Pitch", String.format("%+.1f°", Math.toDegrees(pitch.toDouble())))
-            Spacer(Modifier.height(2.dp))
-            Text("Acel. lineal (m/s²)", style = MonoLabel, color = cs.onSurfaceVariant)
+        // --- Gráficas desplegables (una por eje) ---
+        if (showAccelCharts) {
+            Spacer(Modifier.height(10.dp))
+            AccelAxisChart("Eje X", histX, cs.primary)
+            Spacer(Modifier.height(8.dp))
+            AccelAxisChart("Eje Y", histY, cs.tertiary)
+            Spacer(Modifier.height(8.dp))
+            AccelAxisChart("Eje Z", histZ, cs.secondary)
             Text(
-                String.format("X %.2f  Y %.2f  Z %.2f", ax, ay, az),
-                style = MonoData.copy(fontSize = 13.sp), color = cs.onSurface
-            )
-            Text("Vel. angular (rad/s)", style = MonoLabel, color = cs.onSurfaceVariant)
-            Text(
-                String.format("X %.2f  Y %.2f  Z %.2f", imu.angularVelocity.x, imu.angularVelocity.y, imu.angularVelocity.z),
-                style = MonoData.copy(fontSize = 13.sp), color = cs.onSurface
+                "El eje Z incluye la gravedad (~9.8). Cada gráfica usa su propia escala.",
+                style = MonoLabel,
+                color = cs.onSurfaceVariant,
+                modifier = Modifier.padding(top = 6.dp)
             )
         }
     }
+}
+
+/** Fila con etiqueta de eje, valor actual y sparkline propio. */
+@Composable
+private fun AccelAxisChart(label: String, history: List<Float>, color: Color) {
+    val current = history.lastOrNull() ?: 0f
+    MetricLine(label, String.format("%.2f m/s²", current), color)
+    Sparkline(values = history, color = color, height = 40.dp, minSpan = 1f)
 }
 
 /* ---- Batería: barra + historial de porcentaje ---------------------------- */
@@ -557,15 +627,23 @@ fun OdometryView(odom: OdometryData, topic: String) {
     }
 
     Spacer(modifier = Modifier.height(12.dp))
-    val linHist = rememberHistory(odom.linearVelocity)
-    MetricLine("Vel. lineal", String.format("%.2f m/s", odom.linearVelocity), cs.primary)
-    Sparkline(values = linHist, color = cs.primary, height = 44.dp)
+    // Banda muerta: por debajo de 0.01 lo tratamos como 0 exacto (quita el ruido).
+    val linVel = deadband(odom.linearVelocity.toFloat(), 0.01f)
+    val linHist = rememberHistory(linVel)
+    MetricLine("Vel. lineal", String.format("%.2f m/s", linVel), cs.primary)
+    // minSpan 0.4 => si estás parado, el eje representa ±0.2 m/s y la línea sale plana.
+    Sparkline(values = linHist, color = cs.primary, height = 44.dp, minSpan = 0.4f)
 
     Spacer(modifier = Modifier.height(8.dp))
-    val angHist = rememberHistory(odom.angularVelocity)
-    MetricLine("Vel. angular", String.format("%.2f rad/s", odom.angularVelocity), cs.tertiary)
-    Sparkline(values = angHist, color = cs.tertiary, height = 44.dp)
+    val angVel = deadband(odom.angularVelocity.toFloat(), 0.01f)
+    val angHist = rememberHistory(angVel)
+    MetricLine("Vel. angular", String.format("%.2f rad/s", angVel), cs.tertiary)
+    Sparkline(values = angHist, color = cs.tertiary, height = 44.dp, minSpan = 0.4f)
 }
+
+/** Devuelve 0 si el valor está dentro de ±threshold; si no, el valor tal cual. */
+private fun deadband(value: Float, threshold: Float): Float =
+    if (value.absoluteValue < threshold) 0f else value
 
 /* ---- Temperatura: valor + termómetro + historial ------------------------- */
 @Composable
@@ -596,7 +674,7 @@ fun TemperatureView(temp: TemperatureData, topic: String) {
         }
     }
     Spacer(modifier = Modifier.height(10.dp))
-    Sparkline(values = history, color = tempColor)
+    Sparkline(values = history, color = tempColor, minSpan = 5f)
 }
 
 /* ---- NavSatFix (GPS) ----------------------------------------------------- */
