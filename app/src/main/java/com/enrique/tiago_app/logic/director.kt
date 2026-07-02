@@ -127,16 +127,6 @@ class ProtocolDirector(
         _activeSensorData.value = emptyMap()
     }
 
-    /**
-     * Fuerza el reset del monitor de streaming (vacía streams activos + monitor a
-     * IDLE). Se llama al salir de pantallas que consumen streams (Sensores) para
-     * que no queden streams huérfanos que confundan a la Cámara.
-     */
-    fun resetMonitorStreaming() {
-        stateManager.forceMonitorReset()
-    }
-
-
     init {
         // 1. Escuchar los mensajes entrantes (El SharedFlow que hiciste)
         scope.launch {

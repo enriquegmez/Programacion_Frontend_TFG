@@ -158,14 +158,28 @@ fun MainScreen(
                         Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
                             SplitSegmentedControl(
                                 split = isSplitScreen,
-                                onSplitChange = { isSplitScreen = it }
+                                onSplitChange = { split ->
+                                    isSplitScreen = split
+                                    // Al entrar en dividido, la fuente superior por defecto es la
+                                    // cámara. Apagamos sensores que pudieran seguir activos para que
+                                    // no dejen el monitor global ocupado y la cámara no herede su estado.
+                                    if (split) sensorViewModel.onScreenDisposed()
+                                }
                             )
                             if (isSplitScreen) {
                                 Spacer(modifier = Modifier.height(8.dp))
                                 SplitTopSourceControl(
                                     topIsCamera = (topScreenSelection == AppScreen.CAMERA) && hasCameras,
                                     onSelect = { isCam ->
-                                        topScreenSelection = if (isCam && hasCameras) AppScreen.CAMERA else AppScreen.SENSORES
+                                        if (isCam && hasCameras) {
+                                            // Antes de mostrar la cámara, apagamos los sensores que
+                                            // pudieran seguir activos, para que no dejen el monitor
+                                            // global en RECIBIENDO_STREAM y la cámara herede ese estado.
+                                            sensorViewModel.onScreenDisposed()
+                                            topScreenSelection = AppScreen.CAMERA
+                                        } else {
+                                            topScreenSelection = AppScreen.SENSORES
+                                        }
                                     },
                                     cameraEnabled = hasCameras
                                 )
