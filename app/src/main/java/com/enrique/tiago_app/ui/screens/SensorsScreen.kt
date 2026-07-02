@@ -261,13 +261,27 @@ fun SensorCard(sensorInfo: SensorInfo, data: SensorStreamData?) {
  *  Acumula los últimos N valores en el propio Composable (sin tocar el
  *  ViewModel) y los pinta como línea. Se usa para magnitudes que varían.
  * ------------------------------------------------------------------------- */
+/**
+ * Historial de una señal muestreado a intervalos FIJOS de tiempo.
+ *
+ * Toma el valor actual cada [sampleMs] milisegundos y lo añade al buffer, cambie
+ * o no. Esto hace que la gráfica avance con el tiempo real: si el robot está
+ * parado (valor constante 0), la línea sigue corriendo plana en lugar de
+ * congelarse. Se mantiene el último valor recibido entre muestras.
+ */
 @Composable
-private fun rememberHistory(value: Number, maxPoints: Int = 60): List<Float> {
-    val v = value.toFloat()
+private fun rememberHistory(value: Number, maxPoints: Int = 60, sampleMs: Long = 200L): List<Float> {
     val history = remember { mutableStateListOf<Float>() }
-    LaunchedEffect(v) {
-        history.add(v)
-        while (history.size > maxPoints) history.removeAt(0)
+    // Guardamos el valor más reciente en un estado que el reloj lee en cada tic.
+    val latest = remember { mutableStateOf(value.toFloat()) }
+    latest.value = value.toFloat()
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            history.add(latest.value)
+            while (history.size > maxPoints) history.removeAt(0)
+            kotlinx.coroutines.delay(sampleMs)
+        }
     }
     return history
 }
