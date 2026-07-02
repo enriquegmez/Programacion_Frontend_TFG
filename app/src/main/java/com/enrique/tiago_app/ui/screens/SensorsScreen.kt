@@ -394,15 +394,20 @@ private fun MetricLine(label: String, value: String, color: Color = MaterialThem
 fun LaserScanView(scan: LaserScanData) {
     val cs = MaterialTheme.colorScheme
     Text("Rango: ${scan.rangeMin}m – ${scan.rangeMax}m", style = MonoLabel, color = cs.onSurfaceVariant)
+    Text(
+        "angle_min: ${String.format("%.2f", scan.angleMin)} rad · incr: ${String.format("%.4f", scan.angleIncrement)}",
+        style = MonoLabel, color = cs.onSurfaceVariant
+    )
     Spacer(modifier = Modifier.height(8.dp))
 
     val nearColor = Color(0xFFFF5468)
     val midColor = cs.primary
     val farColor = cs.tertiary
 
-    // Offset de orientación (radianes). Con 0, el frente del robot (ángulo 0 del
-    // scan) queda ARRIBA. Si tu láser está montado girado, ajusta aquí:
-    //   atrás -> Math.PI  ·  90° -> Math.PI/2  ·  -90° -> -Math.PI/2
+    // Offset de orientación del láser (radianes). Ajusta hacia dónde queda el
+    // "frente" en el radar. Si el robot mira de frente a un obstáculo pero en el
+    // radar aparece girado, corrige aquí hasta que caiga bajo la flecha ↑:
+    //   1/4 de vuelta -> Math.PI/2   ·  media vuelta -> Math.PI   ·  -1/4 -> -Math.PI/2
     val orientationOffset = 0f
 
     Canvas(modifier = Modifier.fillMaxWidth().height(240.dp)) {
@@ -412,13 +417,12 @@ fun LaserScanView(scan: LaserScanData) {
         val scale = if (scan.rangeMax > 0f) maxPixels / scan.rangeMax else 10f
         val center = Offset(centerX, centerY)
 
-        // Proyección basada en la que ya funcionaba en la interfaz anterior
-        // (cos->X, sin->Y), con una rotación de -90° para que el ángulo 0 del
-        // escáner (frente del robot) apunte hacia ARRIBA en la pantalla.
+        // Proyección original (la que colocaba bien los obstáculos), con un offset
+        // de orientación aplicado al ángulo para alinear el frente del robot.
         fun project(theta: Float, range: Float): Offset {
-            val a = theta + orientationOffset - (Math.PI.toFloat() / 2f)
-            val sx = centerX + (range * cos(a) * scale)
-            val sy = centerY + (range * sin(a) * scale)
+            val a = theta + orientationOffset
+            val sx = centerX - (range * sin(a) * scale)
+            val sy = centerY - (range * cos(a) * scale)
             return Offset(sx, sy)
         }
 
