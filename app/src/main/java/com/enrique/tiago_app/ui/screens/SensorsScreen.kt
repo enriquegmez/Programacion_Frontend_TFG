@@ -280,40 +280,50 @@ private fun Sparkline(
     height: androidx.compose.ui.unit.Dp = 56.dp,
     minFloor: Number? = null,
     maxCeil: Number? = null,
-    minSpan: Float = 0f,   // rango vertical mínimo: evita amplificar ruido diminuto
+    minSpan: Float = 0f,      // rango vertical mínimo: evita amplificar ruido diminuto
+    zeroAnchored: Boolean = false, // si true, el eje se centra en 0 (útil para velocidades)
 ) {
     val cs = MaterialTheme.colorScheme
     Canvas(modifier = modifier.fillMaxWidth().height(height)) {
-        if (values.size < 2) return@Canvas
+        if (values.isEmpty()) return@Canvas
         var minV = minFloor?.toFloat() ?: (values.min())
         var maxV = maxCeil?.toFloat() ?: (values.max())
 
-        // Si el recorrido de los datos es menor que minSpan, ensanchamos el eje
-        // alrededor de su punto medio. Así una señal casi plana (ruido ~0) se dibuja
-        // plana en lugar de estirarse a picos falsos.
-        if (minFloor == null && maxCeil == null && minSpan > 0f) {
-            val realSpan = maxV - minV
-            if (realSpan < minSpan) {
-                val mid = (maxV + minV) / 2f
-                minV = mid - minSpan / 2f
-                maxV = mid + minSpan / 2f
+        if (minFloor == null && maxCeil == null) {
+            if (zeroAnchored) {
+                // Eje simétrico alrededor del 0: la magnitud (positiva o negativa)
+                // más grande define el alcance, con un mínimo de minSpan/2. Así la
+                // línea en 0 siempre cae en el centro vertical, estable en el tiempo.
+                val maxAbs = maxOf(values.maxOf { kotlin.math.abs(it) }, minSpan / 2f)
+                minV = -maxAbs
+                maxV = maxAbs
+            } else if (minSpan > 0f) {
+                val realSpan = maxV - minV
+                if (realSpan < minSpan) {
+                    val mid = (maxV + minV) / 2f
+                    minV = mid - minSpan / 2f
+                    maxV = mid + minSpan / 2f
+                }
             }
         }
 
         val span = (maxV - minV).takeIf { it > 1e-6f } ?: 1f
 
-        val stepX = size.width / (values.size - 1)
+        // Con un solo punto aún no hay segmento; dibujamos una recta horizontal
+        // en su valor para que se vea la línea desde el primer instante.
+        val n = values.size
+        val stepX = if (n > 1) size.width / (n - 1) else size.width
         fun yFor(v: Float): Float {
             val norm = ((v - minV) / span).coerceIn(0f, 1f)
-            // margen vertical del 10%
             return size.height * (1f - norm) * 0.8f + size.height * 0.1f
         }
 
-        // línea base tenue
+        // línea base tenue (posición del 0 si el eje está anclado a 0)
+        val baseY = if (zeroAnchored) yFor(0f) else size.height * 0.9f
         drawLine(
             cs.outline.copy(alpha = 0.5f),
-            Offset(0f, size.height * 0.9f),
-            Offset(size.width, size.height * 0.9f),
+            Offset(0f, baseY),
+            Offset(size.width, baseY),
             1f
         )
 
@@ -321,8 +331,12 @@ private fun Sparkline(
         val fillPath = Path().apply {
             moveTo(0f, size.height)
             lineTo(0f, yFor(values[0]))
-            values.forEachIndexed { i, v -> lineTo(i * stepX, yFor(v)) }
-            lineTo((values.size - 1) * stepX, size.height)
+            if (n == 1) {
+                lineTo(size.width, yFor(values[0]))
+            } else {
+                values.forEachIndexed { i, v -> lineTo(i * stepX, yFor(v)) }
+            }
+            lineTo(size.width, size.height)
             close()
         }
         drawPath(fillPath, color.copy(alpha = 0.12f))
@@ -330,12 +344,16 @@ private fun Sparkline(
         // curva
         val linePath = Path().apply {
             moveTo(0f, yFor(values[0]))
-            values.forEachIndexed { i, v -> lineTo(i * stepX, yFor(v)) }
+            if (n == 1) {
+                lineTo(size.width, yFor(values[0]))
+            } else {
+                values.forEachIndexed { i, v -> lineTo(i * stepX, yFor(v)) }
+            }
         }
         drawPath(linePath, color, style = Stroke(width = 3f, cap = StrokeCap.Round))
 
         // punto final
-        val lastX = (values.size - 1) * stepX
+        val lastX = if (n > 1) (n - 1) * stepX else size.width
         drawCircle(color, radius = 4f, center = Offset(lastX, yFor(values.last())))
     }
 }
@@ -627,18 +645,19 @@ fun OdometryView(odom: OdometryData, topic: String) {
     }
 
     Spacer(modifier = Modifier.height(12.dp))
-    // Banda muerta: por debajo de 0.01 lo tratamos como 0 exacto (quita el ruido).
+    // Banda muerta ligera: por debajo de 0.01 lo tratamos como 0 (quita el ruido
+    // numérico). El eje va anclado a 0, así que estar parado dibuja una línea
+    // plana en el centro que avanza con el tiempo (sincronizada), en vez de nada.
     val linVel = deadband(odom.linearVelocity.toFloat(), 0.01f)
     val linHist = rememberHistory(linVel)
     MetricLine("Vel. lineal", String.format("%.2f m/s", linVel), cs.primary)
-    // minSpan 0.4 => si estás parado, el eje representa ±0.2 m/s y la línea sale plana.
-    Sparkline(values = linHist, color = cs.primary, height = 44.dp, minSpan = 0.4f)
+    Sparkline(values = linHist, color = cs.primary, height = 44.dp, minSpan = 0.4f, zeroAnchored = true)
 
     Spacer(modifier = Modifier.height(8.dp))
     val angVel = deadband(odom.angularVelocity.toFloat(), 0.01f)
     val angHist = rememberHistory(angVel)
     MetricLine("Vel. angular", String.format("%.2f rad/s", angVel), cs.tertiary)
-    Sparkline(values = angHist, color = cs.tertiary, height = 44.dp, minSpan = 0.4f)
+    Sparkline(values = angHist, color = cs.tertiary, height = 44.dp, minSpan = 0.4f, zeroAnchored = true)
 }
 
 /** Devuelve 0 si el valor está dentro de ±threshold; si no, el valor tal cual. */
