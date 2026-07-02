@@ -516,6 +516,23 @@ class ProtocolStateManager {
     // EVENTOS DE RESET DE EMERGENCIA
     // ==========================================
 
+    /**
+     * Fuerza el reset SOLO del monitor de streaming: vacía los streams activos
+     * y devuelve el monitor a IDLE, sin tocar el estado global ni el de movimiento.
+     *
+     * Se usa al abandonar una pantalla que estaba consumiendo streams (p. ej. la
+     * de Sensores). Evita que queden streamIds huérfanos en `activeStreams` cuando
+     * las paradas se envían en ráfaga y sus confirmaciones se pisan, lo que dejaba
+     * el monitor en RECIBIENDO_STREAM y hacía que la Cámara heredara un estado de
+     * "streaming" fantasma (sin URL) imposible de detener.
+     */
+    fun forceMonitorReset() {
+        Log.i(tag, "Reset manual del monitor de streaming. activeStreams=${activeStreams.size} -> 0")
+        activeStreams.clear()
+        transitionMonitor(AppConstants.MonitorState.IDLE)
+    }
+
+
     // Llamado si falla el Watchdog de ROS2
     fun triggerSessionReset() {
         Log.i(tag, "Línea caída o error de sesión. Volviendo a CONEXION_BACKEND.")

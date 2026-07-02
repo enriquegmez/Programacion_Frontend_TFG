@@ -64,5 +64,13 @@ class SensorViewModel(
 
         // 3. Limpiamos la memoria del Director para que al volver a entrar la pantalla esté limpia
         director.clearActiveSensorData()
+
+        // 4. Forzamos el reset del monitor de streaming. Las paradas de arriba se
+        //    envían en ráfaga y sus confirmaciones pueden pisarse, dejando streams
+        //    huérfanos en la máquina de estados (monitor atascado en RECIBIENDO_STREAM).
+        //    Esto era lo que hacía que la Cámara se abriera como "en streaming" sin
+        //    URL y no se pudiera detener. Al resetear aquí, salimos siempre a IDLE.
+        director.resetMonitorStreaming()
+
     }
 }

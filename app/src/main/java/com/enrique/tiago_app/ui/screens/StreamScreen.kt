@@ -39,7 +39,7 @@ fun StreamView(
 
     // 2. Variables de UI
     val isLoading = monitorState.startsWith("ESPERANDO_")
-    val isStreaming = monitorState == AppConstants.MonitorState.RECIBIENDO_STREAM
+    val isStreaming = monitorState == AppConstants.MonitorState.RECIBIENDO_STREAM && streamUrl != null
 
     // 3. Variables para controlar si los menús están abiertos o cerrados
     var topicMenuExpanded by remember { mutableStateOf(false) } // ¡NUEVO! Para el topic
