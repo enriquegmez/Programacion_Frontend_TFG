@@ -169,19 +169,19 @@ fun MainScreen(
                             if (isSplitScreen) {
                                 Spacer(modifier = Modifier.height(8.dp))
                                 SplitTopSourceControl(
-                                    topIsCamera = (topScreenSelection == AppScreen.CAMERA) && hasCameras,
+                                    // CAMBIO 1: Quitamos el '&& hasCameras'
+                                    topIsCamera = (topScreenSelection == AppScreen.CAMERA),
                                     onSelect = { isCam ->
-                                        if (isCam && hasCameras) {
-                                            // Antes de mostrar la cámara, apagamos los sensores que
-                                            // pudieran seguir activos, para que no dejen el monitor
-                                            // global en RECIBIENDO_STREAM y la cámara herede ese estado.
+                                        // CAMBIO 2: Quitamos la condición de 'hasCameras' para dejarle entrar
+                                        if (isCam) {
                                             sensorViewModel.onScreenDisposed()
                                             topScreenSelection = AppScreen.CAMERA
                                         } else {
                                             topScreenSelection = AppScreen.SENSORES
                                         }
                                     },
-                                    cameraEnabled = hasCameras
+                                    // CAMBIO 3: Forzamos a true para que el botón nunca esté "gris" (deshabilitado)
+                                    cameraEnabled = true
                                 )
                             }
                         }
