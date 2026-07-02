@@ -544,7 +544,7 @@ class ProtocolDirector(
                         "⚠️ ALERTA DE SEGURIDAD\n\nSe han detectado múltiples robots (o simuladores) en la misma red Wi-Fi. Por seguridad para evitar accidentes cruzados, la teleoperación ha sido abortada."
                     }
                     "ROBOT_CONNECTION_LOST" -> {
-                        "⚠️ CONEXIÓN PERDIDA\n\nSe ha perdido la comunicación con los nodos del robot Tiago. Operación abortada."
+                        "⚠️ CONEXIÓN PERDIDA\n\nSe ha perdido la comunicación con los nodos del robot."
                     }
                     else -> {
                         "⚠️ PARADA DE EMERGENCIA\n\nEl servidor ha abortado la conexión por seguridad."

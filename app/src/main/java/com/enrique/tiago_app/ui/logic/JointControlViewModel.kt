@@ -69,7 +69,18 @@ class JointControlViewModel(
         val currentValues = _jointValues.value.toMutableMap()
 
         val lastTime = lastTimes[jointName] ?: currentTime
-        val lastVal = lastValues[jointName] ?: currentValues[jointName] ?: newValue
+
+        // ==========================================
+        // ¡NUEVO! EL ARREGLO DEL PRIMER TOQUE
+        // Si no tenemos historial, buscamos la posición inicial real de la articulación.
+        // ==========================================
+        val initialValue = capabilities.value?.capabilities?.controlableJoints
+            ?.find { it.name == jointName }
+            ?.let { it.currentValue ?: ((it.min + it.max) / 2f) }
+            ?: newValue
+
+        // Ahora usamos ese initialValue en vez de newValue como último recurso
+        val lastVal = lastValues[jointName] ?: currentValues[jointName] ?: initialValue
 
         val dt = (currentTime - lastTime) / 1000f
         val jumpDistance = abs(newValue - lastVal)
@@ -100,7 +111,10 @@ class JointControlViewModel(
         // --- GESTIÓN DE INFRACCIONES ---
         if (isViolation) {
             lockedJoints.add(jointName)
-            director.stateManager.showSystemAlert("⚠️ Movimiento bloqueado.\n\nHas movido la barra demasiado rápido o has tocado en un extremo de golpe. Levanta el dedo para continuar.")
+            director.stateManager.showSystemAlert(
+                "⚠️ Movimiento bloqueado.\n\nHas movido la barra demasiado rápido o has tocado en un extremo de golpe. Levanta el dedo para continuar.",
+                title="Aviso de parada"
+            )
 
             currentValues[jointName] = lastVal
             _jointValues.value = currentValues

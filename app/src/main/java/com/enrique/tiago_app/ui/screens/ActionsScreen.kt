@@ -60,7 +60,13 @@ fun PlayMotionScreen(
         }
 
         // --- LÓGICA DE PANTALLAS (Según el estado del semáforo) ---
-        if (movementState == AppConstants.MovementState.IDLE) {
+        // 1. Definimos cuáles son los estados exclusivos de las Acciones
+        val isActionState = movementState == AppConstants.MovementState.ESPERANDO_EJECUTAR_ACCION ||
+                movementState == AppConstants.MovementState.ESPERANDO_DETENER_ACCION
+
+        // 2. Si NO estamos en un estado de acción, mostramos el menú normal.
+        // (Esto incluye IDLE, o estados temporales de apagado de otras herramientas).
+        if (!isActionState) {
             // ESTADO: REPOSO (Mostrar la lista)
 
             // ¡CAMBIO! Solo mostramos el botón de escanear en pantalla completa

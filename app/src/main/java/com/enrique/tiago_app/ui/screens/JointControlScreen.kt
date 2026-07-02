@@ -9,6 +9,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.enrique.tiago_app.protocol.JointLimit
@@ -55,8 +56,8 @@ fun JointControlScreen(viewModel: JointControlViewModel, isCompact: Boolean = fa
                     onClick = { viewModel.toggleJoint(joint.name, !selected) },
                     label = { Text(joint.name) },
                     colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = cs.primary.copy(alpha = 0.14f),
-                        selectedLabelColor = cs.primary
+                        selectedContainerColor = cs.secondaryContainer,
+                        selectedLabelColor = cs.onSecondaryContainer
                     )
                 )
             }
@@ -94,7 +95,7 @@ fun JointSliderItem(jointLimit: JointLimit, currentValue: Float, onValueChange: 
 
     SteelCard {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text(jointLimit.name, fontWeight = FontWeight.Bold, color = cs.primary, style = MaterialTheme.typography.titleMedium)
+            Text(jointLimit.name, fontWeight = FontWeight.Bold, color = Color.Black, style = MaterialTheme.typography.titleMedium)
             Text(String.format("%.2f", value), style = MonoData)
         }
         Spacer(Modifier.height(6.dp))
