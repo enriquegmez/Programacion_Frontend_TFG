@@ -404,12 +404,9 @@ fun LaserScanView(scan: LaserScanData) {
     val midColor = cs.primary
     val farColor = cs.tertiary
 
-    // Offset de orientación del láser (radianes). Ajusta hacia dónde queda el
-    // "frente" en el radar hasta que la flecha ↑ caiga sobre el obstáculo que el
-    // robot mira de frente. NOTA: al haber corregido el espejo izq/derecha, el
-    // giro cambió de sentido; si antes te cuadraba con +Math.PI/4, ahora suele ser
-    // -Math.PI/4. Prueba ambos signos si no cae exacto.
-    val orientationOffset = (-Math.PI / 4).toFloat()
+    // Offset de orientación del láser (radianes). Con Math.PI/4 el frente del robot
+    // cae bajo la flecha ↑ (calibrado con la columna del simulador).
+    val orientationOffset = (Math.PI / 4).toFloat()
 
     Canvas(modifier = Modifier.fillMaxWidth().height(240.dp)) {
         val centerX = size.width / 2f
@@ -418,9 +415,10 @@ fun LaserScanView(scan: LaserScanData) {
         val scale = if (scan.rangeMax > 0f) maxPixels / scan.rangeMax else 10f
         val center = Offset(centerX, centerY)
 
-        // Proyección original (la que colocaba bien los obstáculos), con un offset
-        // de orientación para alinear el frente del robot. El signo de X va POSITIVO
-        // para corregir el efecto espejo (izquierda/derecha estaban invertidas).
+        // Proyección: idéntica a la versión que dejaba el frente arriba y colocaba
+        // bien los obstáculos, pero con la componente X reflejada (signo +) para
+        // corregir el espejo izquierda/derecha. La Y no cambia, así que el frente
+        // sigue cayendo arriba exactamente igual que antes.
         fun project(theta: Float, range: Float): Offset {
             val a = theta + orientationOffset
             val sx = centerX + (range * sin(a) * scale)
@@ -428,17 +426,19 @@ fun LaserScanView(scan: LaserScanData) {
             return Offset(sx, sy)
         }
 
-        // Cono frontal: sector centrado en el FRENTE real del robot (ángulo 0 tras
-        // el offset), del mismo tamaño angular a cada lado. Usa project(), así que
-        // queda alineado con la flecha de frente.
+        // Cono frontal: sector FIJO apuntando hacia arriba, igual que la flecha de
+        // frente. Se dibuja en coordenadas de pantalla (no con project) para que
+        // ambos coincidan siempre, que es como quedaba bien calibrado.
         val conePath = Path().apply {
             moveTo(centerX, centerY)
             val half = 0.45f // ~26° a cada lado
             val steps = 12
             for (i in 0..steps) {
                 val a = -half + (2 * half) * (i / steps.toFloat())
-                val p = project(a, scan.rangeMax)
-                lineTo(p.x, p.y)
+                // ángulo 0 = arriba: x = sin(a), y = -cos(a)
+                val x = centerX + sin(a) * maxPixels
+                val y = centerY - cos(a) * maxPixels
+                lineTo(x, y)
             }
             close()
         }
@@ -475,23 +475,11 @@ fun LaserScanView(scan: LaserScanData) {
             }
         }
 
-        // Marcador de FRENTE: flecha desde el robot hacia el frente real (ángulo 0
-        // tras el offset). Coincide con la bisectriz del cono.
-        val frontDir = 0f + orientationOffset
-        val frontTip = Offset(
-            centerX + sin(frontDir) * maxPixels * 0.9f,
-            centerY - cos(frontDir) * maxPixels * 0.9f
-        )
+        // Marcador de FRENTE: flecha fija apuntando hacia arriba (coincide con el cono).
+        val frontTip = Offset(centerX, centerY - maxPixels * 0.9f)
         drawLine(cs.primary, center, frontTip, strokeWidth = 3f, cap = StrokeCap.Round)
-        // puntas de la flecha (perpendiculares a la dirección de frente)
-        val backX = sin(frontDir); val backY = -cos(frontDir)
-        val perpX = -backY; val perpY = backX
-        val ax1 = frontTip.x - backX * 12f + perpX * 7f
-        val ay1 = frontTip.y - backY * 12f + perpY * 7f
-        val ax2 = frontTip.x - backX * 12f - perpX * 7f
-        val ay2 = frontTip.y - backY * 12f - perpY * 7f
-        drawLine(cs.primary, frontTip, Offset(ax1, ay1), strokeWidth = 3f, cap = StrokeCap.Round)
-        drawLine(cs.primary, frontTip, Offset(ax2, ay2), strokeWidth = 3f, cap = StrokeCap.Round)
+        drawLine(cs.primary, frontTip, Offset(frontTip.x - 7f, frontTip.y + 10f), strokeWidth = 3f, cap = StrokeCap.Round)
+        drawLine(cs.primary, frontTip, Offset(frontTip.x + 7f, frontTip.y + 10f), strokeWidth = 3f, cap = StrokeCap.Round)
 
         // Robot en el centro
         drawCircle(cs.primary, radius = 7f, center = center)
