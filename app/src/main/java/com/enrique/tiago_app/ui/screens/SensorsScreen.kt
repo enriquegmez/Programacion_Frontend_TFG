@@ -164,9 +164,11 @@ private fun iconForSensor(type: String): ImageVector = when (type) {
 @Composable
 private fun SensorSelectChip(label: String, icon: ImageVector, selected: Boolean, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
-    val container = if (selected) cs.primary.copy(alpha = 0.15f) else cs.surface
-    val border = if (selected) cs.primary.copy(alpha = 0.5f) else cs.outline
-    val content = if (selected) cs.primary else cs.onSurfaceVariant
+    // Naranja de marca al seleccionar, igual que los FilterChip de topics/services/
+    // actions y articulaciones (usan secondaryContainer del tema).
+    val container = if (selected) cs.secondaryContainer else cs.surface
+    val border = if (selected) cs.secondary.copy(alpha = 0.5f) else cs.outline
+    val content = if (selected) cs.onSecondaryContainer else cs.onSurfaceVariant
     Surface(
         shape = MaterialTheme.shapes.small,
         color = container,
@@ -242,14 +244,14 @@ fun SensorCard(sensorInfo: SensorInfo, data: SensorStreamData?, isCompact: Boole
             } else {
                 when (val sensorData = data.data) {
                     is LaserScanData -> LaserScanView(sensorData, isCompact)
-                    is BatterySensorData -> BatteryView(sensorData, sensorInfo.topic)
+                    is BatterySensorData -> BatteryView(sensorData, sensorInfo.topic, isCompact)
                     is ImuData -> ImuView(sensorData, isCompact)
-                    is RangeSensorData -> RangeView(sensorData, sensorInfo.topic)
+                    is RangeSensorData -> RangeView(sensorData, sensorInfo.topic, isCompact)
                     is PointCloud2Data -> PointCloudView(sensorData)
-                    is OdometryData -> OdometryView(sensorData, sensorInfo.topic)
+                    is OdometryData -> OdometryView(sensorData, sensorInfo.topic, isCompact)
                     is NavSatFixData -> NavSatFixView(sensorData)
                     is WrenchData -> WrenchView(sensorData)
-                    is TemperatureData -> TemperatureView(sensorData, sensorInfo.topic)
+                    is TemperatureData -> TemperatureView(sensorData, sensorInfo.topic, isCompact)
                 }
             }
         }
@@ -624,7 +626,7 @@ private fun AccelAxisChart(label: String, history: List<Float>, color: Color) {
 
 /* ---- Batería: barra + historial de porcentaje ---------------------------- */
 @Composable
-fun BatteryView(battery: BatterySensorData, topic: String) {
+fun BatteryView(battery: BatterySensorData, topic: String, isCompact: Boolean = false) {
     val cs = MaterialTheme.colorScheme
     val progress = (battery.percentage / 100f).coerceIn(0f, 1f)
     val statusText = when (battery.powerSupplyStatus) {
@@ -646,12 +648,12 @@ fun BatteryView(battery: BatterySensorData, topic: String) {
     Spacer(modifier = Modifier.height(4.dp))
     Text("Voltaje: ${String.format("%.2f", battery.voltage)} V · $statusText", style = MonoLabel, color = cs.onSurfaceVariant)
     Spacer(modifier = Modifier.height(10.dp))
-    Sparkline(values = history, color = barColor, minFloor = 0f, maxCeil = 100f)
+    Sparkline(values = history, color = barColor, height = if (isCompact) 34.dp else 56.dp, minFloor = 0f, maxCeil = 100f)
 }
 
 /* ---- Range: barra + historial de distancia ------------------------------- */
 @Composable
-fun RangeView(rangeData: RangeSensorData, topic: String) {
+fun RangeView(rangeData: RangeSensorData, topic: String, isCompact: Boolean = false) {
     val cs = MaterialTheme.colorScheme
     val rangeSpan = rangeData.maxRange - rangeData.minRange
     val currentSpan = rangeData.range - rangeData.minRange
@@ -672,12 +674,12 @@ fun RangeView(rangeData: RangeSensorData, topic: String) {
         Text("Max ${rangeData.maxRange}m", style = MonoLabel, color = cs.onSurfaceVariant)
     }
     Spacer(modifier = Modifier.height(10.dp))
-    Sparkline(values = history, color = barColor, minFloor = rangeData.minRange, maxCeil = rangeData.maxRange)
+    Sparkline(values = history, color = barColor, height = if (isCompact) 34.dp else 56.dp, minFloor = rangeData.minRange, maxCeil = rangeData.maxRange)
 }
 
 /* ---- Odometría: posición + velocidades con historial --------------------- */
 @Composable
-fun OdometryView(odom: OdometryData, topic: String) {
+fun OdometryView(odom: OdometryData, topic: String, isCompact: Boolean = false) {
     val cs = MaterialTheme.colorScheme
     Text("Posición global (mapa)", style = MonoLabel, color = cs.onSurfaceVariant)
     Spacer(Modifier.height(4.dp))
@@ -693,13 +695,121 @@ fun OdometryView(odom: OdometryData, topic: String) {
     val linVel = deadband(odom.linearVelocity.toFloat(), 0.01f)
     val linHist = rememberHistory(linVel)
     MetricLine("Vel. lineal", String.format("%.2f m/s", linVel), cs.primary)
-    Sparkline(values = linHist, color = cs.primary, height = 44.dp, minSpan = 0.4f, zeroAnchored = true)
+    Sparkline(values = linHist, color = cs.primary, height = if (isCompact) 32.dp else 44.dp, minSpan = 0.4f, zeroAnchored = true)
 
     Spacer(modifier = Modifier.height(8.dp))
     val angVel = deadband(odom.angularVelocity.toFloat(), 0.01f)
     val angHist = rememberHistory(angVel)
     MetricLine("Vel. angular", String.format("%.2f rad/s", angVel), cs.tertiary)
-    Sparkline(values = angHist, color = cs.tertiary, height = 44.dp, minSpan = 0.4f, zeroAnchored = true)
+    Sparkline(values = angHist, color = cs.tertiary, height = if (isCompact) 32.dp else 44.dp, minSpan = 0.4f, zeroAnchored = true)
+
+    // --- Recorrido (trayectoria X/Y) desplegable ---
+    val trail = rememberTrail(odom.position.x.toFloat(), odom.position.y.toFloat())
+    var showTrail by remember { mutableStateOf(false) }
+
+    Spacer(Modifier.height(10.dp))
+    Surface(
+        shape = MaterialTheme.shapes.small,
+        color = cs.surfaceVariant.copy(alpha = 0.5f),
+        onClick = { showTrail = !showTrail },
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                if (showTrail) "Ocultar recorrido" else "Ver recorrido del robot",
+                style = MaterialTheme.typography.labelLarge,
+                color = cs.primary,
+                fontWeight = FontWeight.Bold
+            )
+            Icon(
+                if (showTrail) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                contentDescription = null, tint = cs.primary
+            )
+        }
+    }
+
+    if (showTrail) {
+        Spacer(Modifier.height(10.dp))
+        TrailMap(trail, isCompact)
+    }
+}
+
+/** Acumula posiciones (X,Y) muestreadas a intervalos fijos para dibujar la traza. */
+@Composable
+private fun rememberTrail(x: Float, y: Float, maxPoints: Int = 300, sampleMs: Long = 250L): List<Offset> {
+    val trail = remember { mutableStateListOf<Offset>() }
+    val latest = remember { mutableStateOf(Offset(x, y)) }
+    latest.value = Offset(x, y)
+    LaunchedEffect(Unit) {
+        while (true) {
+            val p = latest.value
+            val last = trail.lastOrNull()
+            // Solo añadimos si el robot se ha movido algo (evita acumular ruido parado)
+            if (last == null || kotlin.math.hypot((p.x - last.x).toDouble(), (p.y - last.y).toDouble()) > 0.01) {
+                trail.add(p)
+                while (trail.size > maxPoints) trail.removeAt(0)
+            }
+            kotlinx.coroutines.delay(sampleMs)
+        }
+    }
+    return trail
+}
+
+/** Dibuja la trayectoria del robot en un recuadro, autoescalada, con inicio y fin marcados. */
+@Composable
+private fun TrailMap(trail: List<Offset>, isCompact: Boolean) {
+    val cs = MaterialTheme.colorScheme
+    Surface(
+        shape = MaterialTheme.shapes.medium,
+        color = cs.surfaceVariant.copy(alpha = 0.4f),
+        border = androidx.compose.foundation.BorderStroke(1.dp, cs.outline),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(if (isCompact) 120.dp else 180.dp)
+                .padding(12.dp)
+        ) {
+            if (trail.size < 2) return@Canvas
+            val xs = trail.map { it.x }; val ys = trail.map { it.y }
+            val minX = xs.min(); val maxX = xs.max()
+            val minY = ys.min(); val maxY = ys.max()
+            val spanX = (maxX - minX).takeIf { it > 1e-3f } ?: 1f
+            val spanY = (maxY - minY).takeIf { it > 1e-3f } ?: 1f
+            // Escala uniforme para no deformar la forma del recorrido
+            val scale = minOf(size.width / spanX, size.height / spanY) * 0.9f
+            val offX = (size.width - spanX * scale) / 2f
+            val offY = (size.height - spanY * scale) / 2f
+            // Convención: X hacia arriba (adelante), Y hacia la izquierda, como un mapa cenital
+            fun toScreen(p: Offset): Offset {
+                val sx = offX + (p.x - minX) * scale
+                val sy = size.height - (offY + (p.y - minY) * scale)
+                return Offset(sx, sy)
+            }
+
+            // rejilla suave
+            drawLine(cs.outline.copy(alpha = 0.3f), Offset(size.width / 2f, 0f), Offset(size.width / 2f, size.height), 1f)
+            drawLine(cs.outline.copy(alpha = 0.3f), Offset(0f, size.height / 2f), Offset(size.width, size.height / 2f), 1f)
+
+            // traza
+            val path = Path()
+            trail.forEachIndexed { i, p ->
+                val s = toScreen(p)
+                if (i == 0) path.moveTo(s.x, s.y) else path.lineTo(s.x, s.y)
+            }
+            drawPath(path, cs.primary, style = Stroke(width = 3f, cap = StrokeCap.Round))
+
+            // inicio (verde) y posición actual (azul)
+            drawCircle(cs.tertiary, radius = 5f, center = toScreen(trail.first()))
+            drawCircle(cs.primary, radius = 6f, center = toScreen(trail.last()))
+            drawCircle(Color.White, radius = 2.5f, center = toScreen(trail.last()))
+        }
+    }
 }
 
 /** Devuelve 0 si el valor está dentro de ±threshold; si no, el valor tal cual. */
@@ -708,7 +818,7 @@ private fun deadband(value: Float, threshold: Float): Float =
 
 /* ---- Temperatura: valor + termómetro + historial ------------------------- */
 @Composable
-fun TemperatureView(temp: TemperatureData, topic: String) {
+fun TemperatureView(temp: TemperatureData, topic: String, isCompact: Boolean = false) {
     val cs = MaterialTheme.colorScheme
     val t = temp.temperature
     val tempColor = when {
@@ -735,7 +845,7 @@ fun TemperatureView(temp: TemperatureData, topic: String) {
         }
     }
     Spacer(modifier = Modifier.height(10.dp))
-    Sparkline(values = history, color = tempColor, minSpan = 5f)
+    Sparkline(values = history, color = tempColor, height = if (isCompact) 34.dp else 56.dp, minSpan = 5f)
 }
 
 /* ---- NavSatFix (GPS) ----------------------------------------------------- */
