@@ -396,11 +396,7 @@ private fun MetricLine(label: String, value: String, color: Color = MaterialThem
 fun LaserScanView(scan: LaserScanData, isCompact: Boolean = false) {
     val cs = MaterialTheme.colorScheme
     Text("Rango: ${scan.rangeMin}m – ${scan.rangeMax}m", style = MonoLabel, color = cs.onSurfaceVariant)
-    Text(
-        "angle_min: ${String.format("%.2f", scan.angleMin)} rad · incr: ${String.format("%.4f", scan.angleIncrement)}",
-        style = MonoLabel, color = cs.onSurfaceVariant
-    )
-    Spacer(modifier = Modifier.height(8.dp))
+    Spacer(modifier = Modifier.height(if (isCompact) 4.dp else 8.dp))
 
     val nearColor = Color(0xFFFF5468)
     val midColor = cs.primary
@@ -410,7 +406,7 @@ fun LaserScanView(scan: LaserScanData, isCompact: Boolean = false) {
     // cae bajo la flecha ↑ (calibrado con la columna del simulador).
     val orientationOffset = (Math.PI / 4).toFloat()
 
-    Canvas(modifier = Modifier.fillMaxWidth().height(if (isCompact) 170.dp else 240.dp)) {
+    Canvas(modifier = Modifier.fillMaxWidth().height(if (isCompact) 130.dp else 240.dp)) {
         val centerX = size.width / 2f
         val centerY = size.height / 2f
         val maxPixels = minOf(centerX, centerY) - 24f
@@ -534,7 +530,7 @@ fun ImuView(imu: ImuData, isCompact: Boolean = false) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             // Horizonte artificial
             Box(
-                Modifier.size(if (isCompact) 90.dp else 120.dp).clip(CircleShape).background(cs.surfaceVariant),
+                Modifier.size(if (isCompact) 78.dp else 120.dp).clip(CircleShape).background(cs.surfaceVariant),
                 contentAlignment = Alignment.Center
             ) {
                 Canvas(Modifier.fillMaxSize()) {
@@ -772,42 +768,68 @@ private fun TrailMap(trail: List<Offset>, isCompact: Boolean) {
         Canvas(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(if (isCompact) 120.dp else 180.dp)
+                .height(if (isCompact) 130.dp else 190.dp)
                 .padding(12.dp)
         ) {
-            if (trail.size < 2) return@Canvas
+            if (trail.isEmpty()) return@Canvas
+
             val xs = trail.map { it.x }; val ys = trail.map { it.y }
             val minX = xs.min(); val maxX = xs.max()
             val minY = ys.min(); val maxY = ys.max()
-            val spanX = (maxX - minX).takeIf { it > 1e-3f } ?: 1f
-            val spanY = (maxY - minY).takeIf { it > 1e-3f } ?: 1f
-            // Escala uniforme para no deformar la forma del recorrido
-            val scale = minOf(size.width / spanX, size.height / spanY) * 0.9f
-            val offX = (size.width - spanX * scale) / 2f
-            val offY = (size.height - spanY * scale) / 2f
-            // Convención: X hacia arriba (adelante), Y hacia la izquierda, como un mapa cenital
+
+            // La vista se centra en el punto medio del recorrido, y su tamaño es el
+            // recorrido real pero NUNCA menor que minViewMeters. Así, si el robot se
+            // mueve poco, la traza se ve pequeña y realista en lugar de estirada.
+            val minViewMeters = 2f
+            val cx = (minX + maxX) / 2f
+            val cy = (minY + maxY) / 2f
+            val halfSpan = maxOf((maxX - minX), (maxY - minY), minViewMeters) / 2f * 1.15f // 15% de margen
+
+            // metros -> píxeles (escala uniforme, misma en X e Y)
+            val viewPx = minOf(size.width, size.height)
+            val scale = viewPx / (halfSpan * 2f)
+            // Convención cenital: X del robot = adelante = ARRIBA ; Y = izquierda = IZQUIERDA
             fun toScreen(p: Offset): Offset {
-                val sx = offX + (p.x - minX) * scale
-                val sy = size.height - (offY + (p.y - minY) * scale)
+                val sx = size.width / 2f - (p.y - cy) * scale   // Y del robot -> eje X pantalla (izq)
+                val sy = size.height / 2f - (p.x - cx) * scale  // X del robot -> eje Y pantalla (arriba)
                 return Offset(sx, sy)
             }
 
-            // rejilla suave
-            drawLine(cs.outline.copy(alpha = 0.3f), Offset(size.width / 2f, 0f), Offset(size.width / 2f, size.height), 1f)
-            drawLine(cs.outline.copy(alpha = 0.3f), Offset(0f, size.height / 2f), Offset(size.width, size.height / 2f), 1f)
-
-            // traza
-            val path = Path()
-            trail.forEachIndexed { i, p ->
-                val s = toScreen(p)
-                if (i == 0) path.moveTo(s.x, s.y) else path.lineTo(s.x, s.y)
+            // Rejilla con marcas cada metro
+            val gridColor = cs.outline.copy(alpha = 0.25f)
+            var m = kotlin.math.ceil(cx - halfSpan).toInt()
+            while (m <= cx + halfSpan) {
+                val yLine = size.height / 2f - (m - cx) * scale
+                drawLine(gridColor, Offset(0f, yLine), Offset(size.width, yLine), 1f)
+                m++
             }
-            drawPath(path, cs.primary, style = Stroke(width = 3f, cap = StrokeCap.Round))
+            m = kotlin.math.ceil(cy - halfSpan).toInt()
+            while (m <= cy + halfSpan) {
+                val xLine = size.width / 2f - (m - cy) * scale
+                drawLine(gridColor, Offset(xLine, 0f), Offset(xLine, size.height), 1f)
+                m++
+            }
+            // ejes centrales algo más marcados
+            drawLine(cs.outline.copy(alpha = 0.45f), Offset(size.width / 2f, 0f), Offset(size.width / 2f, size.height), 1f)
+            drawLine(cs.outline.copy(alpha = 0.45f), Offset(0f, size.height / 2f), Offset(size.width, size.height / 2f), 1f)
 
-            // inicio (verde) y posición actual (azul)
+            // Traza con degradado de opacidad: lo antiguo tenue, lo reciente fuerte,
+            // así se entiende la dirección del recorrido de un vistazo.
+            if (trail.size >= 2) {
+                for (i in 1 until trail.size) {
+                    val a = toScreen(trail[i - 1])
+                    val b = toScreen(trail[i])
+                    val alpha = 0.25f + 0.75f * (i / (trail.size - 1).toFloat())
+                    drawLine(cs.primary.copy(alpha = alpha), a, b, strokeWidth = 3f, cap = StrokeCap.Round)
+                }
+            }
+
+            // Inicio (verde) y posición actual (azul con halo)
             drawCircle(cs.tertiary, radius = 5f, center = toScreen(trail.first()))
-            drawCircle(cs.primary, radius = 6f, center = toScreen(trail.last()))
-            drawCircle(Color.White, radius = 2.5f, center = toScreen(trail.last()))
+            val cur = toScreen(trail.last())
+            drawCircle(cs.primary.copy(alpha = 0.25f), radius = 11f, center = cur)
+            drawCircle(cs.primary, radius = 6f, center = cur)
+            drawCircle(Color.White, radius = 2.5f, center = cur)
         }
     }
 }
