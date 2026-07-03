@@ -126,14 +126,14 @@ fun SensorScreen(viewModel: SensorViewModel, isCompact: Boolean = false) {
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(if (isCompact) 8.dp else 14.dp),
                     contentPadding = PaddingValues(bottom = 16.dp)
                 ) {
                     items(items = activeSensorTopics.toList(), key = { it }) { topic ->
                         val sensorInfo = availableSensors.find { it.topic == topic }
                         val currentData = activeSensorData[topic]
                         if (sensorInfo != null) {
-                            SensorCard(sensorInfo = sensorInfo, data = currentData)
+                            SensorCard(sensorInfo = sensorInfo, data = currentData, isCompact = isCompact)
                         }
                     }
                 }
@@ -186,7 +186,7 @@ private fun SensorSelectChip(label: String, icon: ImageVector, selected: Boolean
 
 /** Tarjeta de sensor con cabecera (icono + topic + badge de tipo). */
 @Composable
-fun SensorCard(sensorInfo: SensorInfo, data: SensorStreamData?) {
+fun SensorCard(sensorInfo: SensorInfo, data: SensorStreamData?, isCompact: Boolean = false) {
     val cs = MaterialTheme.colorScheme
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -194,7 +194,7 @@ fun SensorCard(sensorInfo: SensorInfo, data: SensorStreamData?) {
         color = cs.surface,
         border = BorderStroke(1.dp, cs.outline)
     ) {
-        Column(modifier = Modifier.padding(16.dp).fillMaxWidth()) {
+        Column(modifier = Modifier.padding(if (isCompact) 10.dp else 16.dp).fillMaxWidth()) {
             // Cabecera
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -203,15 +203,15 @@ fun SensorCard(sensorInfo: SensorInfo, data: SensorStreamData?) {
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                     Box(
-                        Modifier.size(30.dp).clip(RoundedCornerShape(8.dp)).background(cs.primary.copy(alpha = 0.12f)),
+                        Modifier.size(if (isCompact) 24.dp else 30.dp).clip(RoundedCornerShape(8.dp)).background(cs.primary.copy(alpha = 0.12f)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(iconForSensor(sensorInfo.type), null, tint = cs.primary, modifier = Modifier.size(18.dp))
+                        Icon(iconForSensor(sensorInfo.type), null, tint = cs.primary, modifier = Modifier.size(if (isCompact) 14.dp else 18.dp))
                     }
-                    Spacer(Modifier.width(10.dp))
+                    Spacer(Modifier.width(if (isCompact) 7.dp else 10.dp))
                     Text(
                         sensorInfo.topic,
-                        style = MonoData.copy(fontSize = 14.sp),
+                        style = MonoData.copy(fontSize = if (isCompact) 12.sp else 14.sp),
                         color = cs.onSurface,
                         maxLines = 1
                     )
@@ -226,7 +226,7 @@ fun SensorCard(sensorInfo: SensorInfo, data: SensorStreamData?) {
                 }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(if (isCompact) 8.dp else 14.dp))
 
             if (data == null) {
                 // Estado "sin datos" claro y por tipo
@@ -241,9 +241,9 @@ fun SensorCard(sensorInfo: SensorInfo, data: SensorStreamData?) {
                 }
             } else {
                 when (val sensorData = data.data) {
-                    is LaserScanData -> LaserScanView(sensorData)
+                    is LaserScanData -> LaserScanView(sensorData, isCompact)
                     is BatterySensorData -> BatteryView(sensorData, sensorInfo.topic)
-                    is ImuData -> ImuView(sensorData)
+                    is ImuData -> ImuView(sensorData, isCompact)
                     is RangeSensorData -> RangeView(sensorData, sensorInfo.topic)
                     is PointCloud2Data -> PointCloudView(sensorData)
                     is OdometryData -> OdometryView(sensorData, sensorInfo.topic)
@@ -391,7 +391,7 @@ private fun MetricLine(label: String, value: String, color: Color = MaterialThem
 
 /* ---- LaserScan mejorado: anillos etiquetados + cono frontal + color prox. -- */
 @Composable
-fun LaserScanView(scan: LaserScanData) {
+fun LaserScanView(scan: LaserScanData, isCompact: Boolean = false) {
     val cs = MaterialTheme.colorScheme
     Text("Rango: ${scan.rangeMin}m – ${scan.rangeMax}m", style = MonoLabel, color = cs.onSurfaceVariant)
     Text(
@@ -408,7 +408,7 @@ fun LaserScanView(scan: LaserScanData) {
     // cae bajo la flecha ↑ (calibrado con la columna del simulador).
     val orientationOffset = (Math.PI / 4).toFloat()
 
-    Canvas(modifier = Modifier.fillMaxWidth().height(240.dp)) {
+    Canvas(modifier = Modifier.fillMaxWidth().height(if (isCompact) 170.dp else 240.dp)) {
         val centerX = size.width / 2f
         val centerY = size.height / 2f
         val maxPixels = minOf(centerX, centerY) - 24f
@@ -507,7 +507,7 @@ private fun LegendDot(color: Color, label: String) {
 
 /* ---- IMU: horizonte artificial + cifras + gráficas de aceleración (plegables) */
 @Composable
-fun ImuView(imu: ImuData) {
+fun ImuView(imu: ImuData, isCompact: Boolean = false) {
     val cs = MaterialTheme.colorScheme
 
     // Roll/pitch a partir de la aceleración lineal (estimación por gravedad).
@@ -532,7 +532,7 @@ fun ImuView(imu: ImuData) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             // Horizonte artificial
             Box(
-                Modifier.size(120.dp).clip(CircleShape).background(cs.surfaceVariant),
+                Modifier.size(if (isCompact) 90.dp else 120.dp).clip(CircleShape).background(cs.surfaceVariant),
                 contentAlignment = Alignment.Center
             ) {
                 Canvas(Modifier.fillMaxSize()) {

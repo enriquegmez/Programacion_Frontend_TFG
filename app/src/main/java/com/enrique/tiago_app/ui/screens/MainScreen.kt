@@ -263,23 +263,7 @@ fun MainScreen(
             )
         }
 
-        // --- SELECTOR FLOTANTE Cámara/Sensores (al pulsar "Dividida") ---
-        SplitSourcePicker(
-            visible = showSourcePicker,
-            cameraEnabled = hasCameras,
-            onSelectCamera = {
-                sensorViewModel.onScreenDisposed()
-                topScreenSelection = AppScreen.CAMERA
-                showSourcePicker = false
-            },
-            onSelectSensors = {
-                topScreenSelection = AppScreen.SENSORES
-                showSourcePicker = false
-            },
-            onDismiss = { showSourcePicker = false }
-        )
-
-        // --- BARRA FLOTANTE AXON (siempre por encima del velo) ---
+        // --- BARRA FLOTANTE AXON (siempre por encima del velo del menú) ---
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -295,5 +279,24 @@ fun MainScreen(
                 closeSignal = closeMenuSignal
             )
         }
+
+        // --- SELECTOR FLOTANTE Cámara/Sensores (al pulsar "Dividida") ---
+        // Se dibuja el ÚLTIMO para que su velo blanco cubra también la barra
+        // inferior: mientras se elige la fuente, sólo se puede tocar el selector
+        // (o el propio velo para cerrar), no las opciones del menú.
+        SplitSourcePicker(
+            visible = showSourcePicker,
+            cameraEnabled = hasCameras,
+            onSelectCamera = {
+                sensorViewModel.onScreenDisposed()
+                topScreenSelection = AppScreen.CAMERA
+                showSourcePicker = false
+            },
+            onSelectSensors = {
+                topScreenSelection = AppScreen.SENSORES
+                showSourcePicker = false
+            },
+            onDismiss = { showSourcePicker = false }
+        )
     }
 }
