@@ -54,6 +54,7 @@ fun SensorScreen(viewModel: SensorViewModel, isCompact: Boolean = false) {
     val activeSensorTopics by viewModel.activeSensorTopics.collectAsState()
     val activeSensorData by viewModel.activeSensorData.collectAsState()
     val hasSearched by viewModel.hasSearched.collectAsState()
+    val odomTrail by viewModel.odomTrail.collectAsState()
     val cs = MaterialTheme.colorScheme
 
     DisposableEffect(Unit) {
@@ -133,7 +134,13 @@ fun SensorScreen(viewModel: SensorViewModel, isCompact: Boolean = false) {
                         val sensorInfo = availableSensors.find { it.topic == topic }
                         val currentData = activeSensorData[topic]
                         if (sensorInfo != null) {
-                            SensorCard(sensorInfo = sensorInfo, data = currentData, isCompact = isCompact)
+                            SensorCard(
+                                sensorInfo = sensorInfo,
+                                data = currentData,
+                                isCompact = isCompact,
+                                odomTrail = odomTrail,
+                                onTrailPoint = { x, y -> viewModel.addTrailPoint(x, y) }
+                            )
                         }
                     }
                 }
@@ -188,7 +195,13 @@ private fun SensorSelectChip(label: String, icon: ImageVector, selected: Boolean
 
 /** Tarjeta de sensor con cabecera (icono + topic + badge de tipo). */
 @Composable
-fun SensorCard(sensorInfo: SensorInfo, data: SensorStreamData?, isCompact: Boolean = false) {
+fun SensorCard(
+    sensorInfo: SensorInfo,
+    data: SensorStreamData?,
+    isCompact: Boolean = false,
+    odomTrail: List<Pair<Float, Float>> = emptyList(),
+    onTrailPoint: (Float, Float) -> Unit = { _, _ -> },
+) {
     val cs = MaterialTheme.colorScheme
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -248,7 +261,7 @@ fun SensorCard(sensorInfo: SensorInfo, data: SensorStreamData?, isCompact: Boole
                     is ImuData -> ImuView(sensorData, isCompact)
                     is RangeSensorData -> RangeView(sensorData, sensorInfo.topic, isCompact)
                     is PointCloud2Data -> PointCloudView(sensorData)
-                    is OdometryData -> OdometryView(sensorData, sensorInfo.topic, isCompact)
+                    is OdometryData -> OdometryView(sensorData, sensorInfo.topic, isCompact, odomTrail, onTrailPoint)
                     is NavSatFixData -> NavSatFixView(sensorData)
                     is WrenchData -> WrenchView(sensorData, isCompact)
                     is TemperatureData -> TemperatureView(sensorData, sensorInfo.topic, isCompact)
@@ -583,13 +596,13 @@ fun ImuView(imu: ImuData, isCompact: Boolean = false) {
                 Text(
                     if (showAccelCharts) "Ocultar gráficas de aceleración" else "Ver gráficas de aceleración",
                     style = MaterialTheme.typography.labelLarge,
-                    color = cs.primary,
+                    color = cs.onSurface,
                     fontWeight = FontWeight.Bold
                 )
                 Icon(
                     if (showAccelCharts) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                     contentDescription = null,
-                    tint = cs.primary
+                    tint = cs.onSurface
                 )
             }
         }
@@ -675,7 +688,13 @@ fun RangeView(rangeData: RangeSensorData, topic: String, isCompact: Boolean = fa
 
 /* ---- Odometría: posición + velocidades con historial --------------------- */
 @Composable
-fun OdometryView(odom: OdometryData, topic: String, isCompact: Boolean = false) {
+fun OdometryView(
+    odom: OdometryData,
+    topic: String,
+    isCompact: Boolean = false,
+    odomTrail: List<Pair<Float, Float>> = emptyList(),
+    onTrailPoint: (Float, Float) -> Unit = { _, _ -> },
+) {
     val cs = MaterialTheme.colorScheme
     Text("Posición global (mapa)", style = MonoLabel, color = cs.onSurfaceVariant)
     Spacer(Modifier.height(4.dp))
@@ -699,8 +718,13 @@ fun OdometryView(odom: OdometryData, topic: String, isCompact: Boolean = false) 
     MetricLine("Vel. angular", String.format("%.2f rad/s", angVel), cs.tertiary)
     Sparkline(values = angHist, color = cs.tertiary, height = if (isCompact) 28.dp else 44.dp, minSpan = 0.4f, zeroAnchored = true)
 
-    // --- Recorrido (trayectoria X/Y) desplegable ---
-    val trail = rememberTrail(odom.position.x.toFloat(), odom.position.y.toFloat())
+    // --- Recorrido (trayectoria X/Y) persistente ---
+    // Reportamos la posición actual al ViewModel (que acumula el recorrido y lo
+    // conserva aunque salgamos y volvamos a entrar). El dibujo usa ese buffer.
+    LaunchedEffect(odom.position.x, odom.position.y) {
+        onTrailPoint(odom.position.x.toFloat(), odom.position.y.toFloat())
+    }
+    val trail = remember(odomTrail) { odomTrail.map { Offset(it.first, it.second) } }
     var showTrail by remember { mutableStateOf(false) }
 
     Spacer(Modifier.height(if (isCompact) 6.dp else 10.dp))
@@ -718,12 +742,12 @@ fun OdometryView(odom: OdometryData, topic: String, isCompact: Boolean = false) 
             Text(
                 if (showTrail) "Ocultar recorrido" else "Ver recorrido del robot",
                 style = MaterialTheme.typography.labelLarge,
-                color = cs.primary,
+                color = cs.onSurface,
                 fontWeight = FontWeight.Bold
             )
             Icon(
                 if (showTrail) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                contentDescription = null, tint = cs.primary
+                contentDescription = null, tint = cs.onSurface
             )
         }
     }
@@ -732,27 +756,6 @@ fun OdometryView(odom: OdometryData, topic: String, isCompact: Boolean = false) 
         Spacer(Modifier.height(10.dp))
         TrailMap(trail, isCompact)
     }
-}
-
-/** Acumula posiciones (X,Y) muestreadas a intervalos fijos para dibujar la traza. */
-@Composable
-private fun rememberTrail(x: Float, y: Float, maxPoints: Int = 300, sampleMs: Long = 250L): List<Offset> {
-    val trail = remember { mutableStateListOf<Offset>() }
-    val latest = remember { mutableStateOf(Offset(x, y)) }
-    latest.value = Offset(x, y)
-    LaunchedEffect(Unit) {
-        while (true) {
-            val p = latest.value
-            val last = trail.lastOrNull()
-            // Solo añadimos si el robot se ha movido algo (evita acumular ruido parado)
-            if (last == null || kotlin.math.hypot((p.x - last.x).toDouble(), (p.y - last.y).toDouble()) > 0.01) {
-                trail.add(p)
-                while (trail.size > maxPoints) trail.removeAt(0)
-            }
-            kotlinx.coroutines.delay(sampleMs)
-        }
-    }
-    return trail
 }
 
 /** Dibuja la trayectoria del robot en un recuadro, autoescalada, con inicio y fin marcados. */

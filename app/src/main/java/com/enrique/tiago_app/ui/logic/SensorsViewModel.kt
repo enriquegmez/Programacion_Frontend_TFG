@@ -24,6 +24,27 @@ class SensorViewModel(
     private val _activeSensorTopics = MutableStateFlow<Set<String>>(emptySet())
     val activeSensorTopics: StateFlow<Set<String>> = _activeSensorTopics.asStateFlow()
 
+    // 4. Recorrido (trayectoria X/Y) de odometría. Vive en el ViewModel para que
+    //    persista aunque el usuario salga y vuelva a entrar a la pantalla de
+    //    sensores; solo se borra al desconectar (clearTrail).
+    private val _odomTrail = MutableStateFlow<List<Pair<Float, Float>>>(emptyList())
+    val odomTrail: StateFlow<List<Pair<Float, Float>>> = _odomTrail.asStateFlow()
+    private val maxTrailPoints = 1000
+
+    /** Añade un punto al recorrido si el robot se ha movido lo suficiente. */
+    fun addTrailPoint(x: Float, y: Float) {
+        val last = _odomTrail.value.lastOrNull()
+        if (last == null || kotlin.math.hypot((x - last.first).toDouble(), (y - last.second).toDouble()) > 0.01) {
+            val updated = _odomTrail.value + (x to y)
+            _odomTrail.value = if (updated.size > maxTrailPoints) updated.drop(updated.size - maxTrailPoints) else updated
+        }
+    }
+
+    /** Borra el recorrido. Se llama al desconectar la sesión. */
+    fun clearTrail() {
+        _odomTrail.value = emptyList()
+    }
+
     /**
      * Se llama cuando el usuario pulsa el botón "Ver Sensores"
      */

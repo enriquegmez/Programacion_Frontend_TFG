@@ -274,7 +274,7 @@ fun MainScreen(
                 currentRoute = currentRouteString,
                 enabledRoutes = enabledRoutes,
                 onNavigate = { navigateFromAxonMenu(it) },
-                onDisconnect = { mainViewModel.disconnectFromRobot() },
+                onDisconnect = { sensorViewModel.clearTrail(); mainViewModel.disconnectFromRobot() },
                 onOpenChange = { menuOpen = it },
                 closeSignal = closeMenuSignal
             )
