@@ -196,7 +196,7 @@ fun SensorCard(sensorInfo: SensorInfo, data: SensorStreamData?, isCompact: Boole
         color = cs.surface,
         border = BorderStroke(1.dp, cs.outline)
     ) {
-        Column(modifier = Modifier.padding(if (isCompact) 10.dp else 16.dp).fillMaxWidth()) {
+        Column(modifier = Modifier.padding(if (isCompact) 8.dp else 16.dp).fillMaxWidth()) {
             // Cabecera
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -228,7 +228,7 @@ fun SensorCard(sensorInfo: SensorInfo, data: SensorStreamData?, isCompact: Boole
                 }
             }
 
-            Spacer(modifier = Modifier.height(if (isCompact) 8.dp else 14.dp))
+            Spacer(modifier = Modifier.height(if (isCompact) 6.dp else 14.dp))
 
             if (data == null) {
                 // Estado "sin datos" claro y por tipo
@@ -250,7 +250,7 @@ fun SensorCard(sensorInfo: SensorInfo, data: SensorStreamData?, isCompact: Boole
                     is PointCloud2Data -> PointCloudView(sensorData)
                     is OdometryData -> OdometryView(sensorData, sensorInfo.topic, isCompact)
                     is NavSatFixData -> NavSatFixView(sensorData)
-                    is WrenchData -> WrenchView(sensorData)
+                    is WrenchData -> WrenchView(sensorData, isCompact)
                     is TemperatureData -> TemperatureView(sensorData, sensorInfo.topic, isCompact)
                 }
             }
@@ -406,7 +406,7 @@ fun LaserScanView(scan: LaserScanData, isCompact: Boolean = false) {
     // cae bajo la flecha ↑ (calibrado con la columna del simulador).
     val orientationOffset = (Math.PI / 4).toFloat()
 
-    Canvas(modifier = Modifier.fillMaxWidth().height(if (isCompact) 130.dp else 240.dp)) {
+    Canvas(modifier = Modifier.fillMaxWidth().height(if (isCompact) 118.dp else 240.dp)) {
         val centerX = size.width / 2f
         val centerY = size.height / 2f
         val maxPixels = minOf(centerX, centerY) - 24f
@@ -530,7 +530,7 @@ fun ImuView(imu: ImuData, isCompact: Boolean = false) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             // Horizonte artificial
             Box(
-                Modifier.size(if (isCompact) 78.dp else 120.dp).clip(CircleShape).background(cs.surfaceVariant),
+                Modifier.size(if (isCompact) 70.dp else 120.dp).clip(CircleShape).background(cs.surfaceVariant),
                 contentAlignment = Alignment.Center
             ) {
                 Canvas(Modifier.fillMaxSize()) {
@@ -568,7 +568,7 @@ fun ImuView(imu: ImuData, isCompact: Boolean = false) {
         }
 
         // --- Botón que despliega las gráficas de aceleración ---
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(if (isCompact) 4.dp else 10.dp))
         Surface(
             shape = MaterialTheme.shapes.small,
             color = cs.surfaceVariant.copy(alpha = 0.5f),
@@ -684,26 +684,26 @@ fun OdometryView(odom: OdometryData, topic: String, isCompact: Boolean = false) 
         Text("Y ${String.format("%.3f", odom.position.y)} m", style = MonoData.copy(fontSize = 14.sp), color = cs.onSurface)
     }
 
-    Spacer(modifier = Modifier.height(12.dp))
+    Spacer(modifier = Modifier.height(if (isCompact) 6.dp else 12.dp))
     // Banda muerta ligera: por debajo de 0.01 lo tratamos como 0 (quita el ruido
     // numérico). El eje va anclado a 0, así que estar parado dibuja una línea
     // plana en el centro que avanza con el tiempo (sincronizada), en vez de nada.
     val linVel = deadband(odom.linearVelocity.toFloat(), 0.01f)
     val linHist = rememberHistory(linVel)
     MetricLine("Vel. lineal", String.format("%.2f m/s", linVel), cs.primary)
-    Sparkline(values = linHist, color = cs.primary, height = if (isCompact) 32.dp else 44.dp, minSpan = 0.4f, zeroAnchored = true)
+    Sparkline(values = linHist, color = cs.primary, height = if (isCompact) 28.dp else 44.dp, minSpan = 0.4f, zeroAnchored = true)
 
-    Spacer(modifier = Modifier.height(8.dp))
+    Spacer(modifier = Modifier.height(if (isCompact) 4.dp else 8.dp))
     val angVel = deadband(odom.angularVelocity.toFloat(), 0.01f)
     val angHist = rememberHistory(angVel)
     MetricLine("Vel. angular", String.format("%.2f rad/s", angVel), cs.tertiary)
-    Sparkline(values = angHist, color = cs.tertiary, height = if (isCompact) 32.dp else 44.dp, minSpan = 0.4f, zeroAnchored = true)
+    Sparkline(values = angHist, color = cs.tertiary, height = if (isCompact) 28.dp else 44.dp, minSpan = 0.4f, zeroAnchored = true)
 
     // --- Recorrido (trayectoria X/Y) desplegable ---
     val trail = rememberTrail(odom.position.x.toFloat(), odom.position.y.toFloat())
     var showTrail by remember { mutableStateOf(false) }
 
-    Spacer(Modifier.height(10.dp))
+    Spacer(Modifier.height(if (isCompact) 6.dp else 10.dp))
     Surface(
         shape = MaterialTheme.shapes.small,
         color = cs.surfaceVariant.copy(alpha = 0.5f),
@@ -901,28 +901,28 @@ private fun GpsField(label: String, value: String) {
 
 /* ---- Wrench: barras centradas en cero ------------------------------------ */
 @Composable
-fun WrenchView(wrench: WrenchData) {
+fun WrenchView(wrench: WrenchData, isCompact: Boolean = false) {
     val cs = MaterialTheme.colorScheme
     Text("Esfuerzo (brazo/muñeca)", style = MonoLabel, color = cs.onSurfaceVariant)
-    Spacer(modifier = Modifier.height(8.dp))
+    Spacer(modifier = Modifier.height(if (isCompact) 4.dp else 8.dp))
     Text("Fuerza (N)", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = cs.onSurface)
-    ZeroCenteredBar("X", wrench.force.x, 50f)
-    ZeroCenteredBar("Y", wrench.force.y, 50f)
-    ZeroCenteredBar("Z", wrench.force.z, 50f)
-    Spacer(modifier = Modifier.height(8.dp))
+    ZeroCenteredBar("X", wrench.force.x, 50f, isCompact)
+    ZeroCenteredBar("Y", wrench.force.y, 50f, isCompact)
+    ZeroCenteredBar("Z", wrench.force.z, 50f, isCompact)
+    Spacer(modifier = Modifier.height(if (isCompact) 4.dp else 8.dp))
     Text("Torque (Nm)", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = cs.onSurface)
-    ZeroCenteredBar("X", wrench.torque.x, 10f)
-    ZeroCenteredBar("Y", wrench.torque.y, 10f)
-    ZeroCenteredBar("Z", wrench.torque.z, 10f)
+    ZeroCenteredBar("X", wrench.torque.x, 10f, isCompact)
+    ZeroCenteredBar("Y", wrench.torque.y, 10f, isCompact)
+    ZeroCenteredBar("Z", wrench.torque.z, 10f, isCompact)
 }
 
 @Composable
-fun ZeroCenteredBar(label: String, value: Number, maxValue: Float) {
+fun ZeroCenteredBar(label: String, value: Number, maxValue: Float, isCompact: Boolean = false) {
     val cs = MaterialTheme.colorScheme
     val v = value.toFloat()
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = if (isCompact) 1.dp else 2.dp)) {
         Text("$label:", style = MonoLabel, color = cs.onSurfaceVariant, modifier = Modifier.width(24.dp))
-        Box(modifier = Modifier.weight(1f).height(12.dp).clip(RoundedCornerShape(3.dp)).background(cs.surfaceVariant)) {
+        Box(modifier = Modifier.weight(1f).height(if (isCompact) 10.dp else 12.dp).clip(RoundedCornerShape(3.dp)).background(cs.surfaceVariant)) {
             Canvas(modifier = Modifier.fillMaxSize()) {
                 val midX = size.width / 2f
                 val normalized = (v / maxValue).coerceIn(-1f, 1f)
