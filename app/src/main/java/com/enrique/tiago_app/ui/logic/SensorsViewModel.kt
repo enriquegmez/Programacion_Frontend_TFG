@@ -27,15 +27,28 @@ class SensorViewModel(
     // 4. Recorrido (trayectoria X/Y) de odometría. Vive en el ViewModel para que
     //    persista aunque el usuario salga y vuelva a entrar a la pantalla de
     //    sensores; solo se borra al desconectar (clearTrail).
+    //    Los tramos se separan con un punto "corte" (NaN, NaN): cuando el usuario
+    //    deja de ver odom y vuelve, se inicia un tramo NUEVO en lugar de unir con
+    //    una línea recta la última posición conocida con la nueva.
     private val _odomTrail = MutableStateFlow<List<Pair<Float, Float>>>(emptyList())
     val odomTrail: StateFlow<List<Pair<Float, Float>>> = _odomTrail.asStateFlow()
     private val maxTrailPoints = 1000
 
+    /** Marca el inicio de un tramo nuevo (se llama al empezar a ver odom). */
+    fun startNewTrailSegment() {
+        val current = _odomTrail.value
+        // Solo insertamos separador si ya hay puntos y el último no es ya un corte.
+        if (current.isNotEmpty() && !current.last().first.isNaN()) {
+            _odomTrail.value = current + (Float.NaN to Float.NaN)
+        }
+    }
+
     /** Añade un punto al recorrido si el robot se ha movido lo suficiente. */
     fun addTrailPoint(x: Float, y: Float) {
-        val last = _odomTrail.value.lastOrNull()
+        val current = _odomTrail.value
+        val last = current.lastOrNull { !it.first.isNaN() }  // último punto real (ignora cortes)
         if (last == null || kotlin.math.hypot((x - last.first).toDouble(), (y - last.second).toDouble()) > 0.01) {
-            val updated = _odomTrail.value + (x to y)
+            val updated = current + (x to y)
             _odomTrail.value = if (updated.size > maxTrailPoints) updated.drop(updated.size - maxTrailPoints) else updated
         }
     }

@@ -139,7 +139,8 @@ fun SensorScreen(viewModel: SensorViewModel, isCompact: Boolean = false) {
                                 data = currentData,
                                 isCompact = isCompact,
                                 odomTrail = odomTrail,
-                                onTrailPoint = { x, y -> viewModel.addTrailPoint(x, y) }
+                                onTrailPoint = { x, y -> viewModel.addTrailPoint(x, y) },
+                                onNewSegment = { viewModel.startNewTrailSegment() }
                             )
                         }
                     }
@@ -201,6 +202,7 @@ fun SensorCard(
     isCompact: Boolean = false,
     odomTrail: List<Pair<Float, Float>> = emptyList(),
     onTrailPoint: (Float, Float) -> Unit = { _, _ -> },
+    onNewSegment: () -> Unit = {},
 ) {
     val cs = MaterialTheme.colorScheme
     Surface(
@@ -261,7 +263,7 @@ fun SensorCard(
                     is ImuData -> ImuView(sensorData, isCompact)
                     is RangeSensorData -> RangeView(sensorData, sensorInfo.topic, isCompact)
                     is PointCloud2Data -> PointCloudView(sensorData)
-                    is OdometryData -> OdometryView(sensorData, sensorInfo.topic, isCompact, odomTrail, onTrailPoint)
+                    is OdometryData -> OdometryView(sensorData, sensorInfo.topic, isCompact, odomTrail, onTrailPoint, onNewSegment)
                     is NavSatFixData -> NavSatFixView(sensorData)
                     is WrenchData -> WrenchView(sensorData, isCompact)
                     is TemperatureData -> TemperatureView(sensorData, sensorInfo.topic, isCompact)
@@ -694,6 +696,7 @@ fun OdometryView(
     isCompact: Boolean = false,
     odomTrail: List<Pair<Float, Float>> = emptyList(),
     onTrailPoint: (Float, Float) -> Unit = { _, _ -> },
+    onNewSegment: () -> Unit = {},
 ) {
     val cs = MaterialTheme.colorScheme
     Text("Posición global (mapa)", style = MonoLabel, color = cs.onSurfaceVariant)
@@ -719,6 +722,10 @@ fun OdometryView(
     Sparkline(values = angHist, color = cs.tertiary, height = if (isCompact) 28.dp else 44.dp, minSpan = 0.4f, zeroAnchored = true)
 
     // --- Recorrido (trayectoria X/Y) persistente ---
+    // Al montarse la vista (empezamos a ver odom) marcamos el inicio de un tramo
+    // nuevo: así, si el robot se movió mientras no veíamos odom, NO se une con una
+    // línea recta; el tramo anterior queda dibujado y este empieza en la nueva pos.
+    LaunchedEffect(Unit) { onNewSegment() }
     // Reportamos la posición actual al ViewModel (que acumula el recorrido y lo
     // conserva aunque salgamos y volvamos a entrar). El dibujo usa ese buffer.
     LaunchedEffect(odom.position.x, odom.position.y) {
@@ -776,7 +783,10 @@ private fun TrailMap(trail: List<Offset>, isCompact: Boolean) {
         ) {
             if (trail.isEmpty()) return@Canvas
 
-            val xs = trail.map { it.x }; val ys = trail.map { it.y }
+            // Puntos reales (ignorando los separadores de tramo NaN) para el encuadre.
+            val real = trail.filter { !it.x.isNaN() }
+            if (real.isEmpty()) return@Canvas
+            val xs = real.map { it.x }; val ys = real.map { it.y }
             val minX = xs.min(); val maxX = xs.max()
             val minY = ys.min(); val maxY = ys.max()
 
@@ -816,20 +826,21 @@ private fun TrailMap(trail: List<Offset>, isCompact: Boolean) {
             drawLine(cs.outline.copy(alpha = 0.45f), Offset(size.width / 2f, 0f), Offset(size.width / 2f, size.height), 1f)
             drawLine(cs.outline.copy(alpha = 0.45f), Offset(0f, size.height / 2f), Offset(size.width, size.height / 2f), 1f)
 
-            // Traza con degradado de opacidad: lo antiguo tenue, lo reciente fuerte,
-            // así se entiende la dirección del recorrido de un vistazo.
+            // Traza con degradado de opacidad. NO se dibuja línea a través de un
+            // corte (NaN): cada tramo es independiente, así el movimiento hecho sin
+            // ver odom no se une con una recta al reanudar.
             if (trail.size >= 2) {
                 for (i in 1 until trail.size) {
-                    val a = toScreen(trail[i - 1])
-                    val b = toScreen(trail[i])
+                    val p0 = trail[i - 1]; val p1 = trail[i]
+                    if (p0.x.isNaN() || p1.x.isNaN()) continue  // salto entre tramos: sin línea
                     val alpha = 0.25f + 0.75f * (i / (trail.size - 1).toFloat())
-                    drawLine(cs.primary.copy(alpha = alpha), a, b, strokeWidth = 3f, cap = StrokeCap.Round)
+                    drawLine(cs.primary.copy(alpha = alpha), toScreen(p0), toScreen(p1), strokeWidth = 3f, cap = StrokeCap.Round)
                 }
             }
 
-            // Inicio (verde) y posición actual (azul con halo)
-            drawCircle(cs.tertiary, radius = 5f, center = toScreen(trail.first()))
-            val cur = toScreen(trail.last())
+            // Inicio (verde): primer punto real. Posición actual (azul con halo): último real.
+            drawCircle(cs.tertiary, radius = 5f, center = toScreen(real.first()))
+            val cur = toScreen(real.last())
             drawCircle(cs.primary.copy(alpha = 0.25f), radius = 11f, center = cur)
             drawCircle(cs.primary, radius = 6f, center = cur)
             drawCircle(Color.White, radius = 2.5f, center = cur)
