@@ -219,7 +219,8 @@ data class JointLimit(
     @SerialName("name") val name: String,
     @SerialName("min") val min: Float,
     @SerialName("max") val max: Float,
-    @SerialName("current_value") val currentValue: Float? = null // ¡NUEVO! Posición real
+    @SerialName("current_value") val currentValue: Float? = null, // ¡NUEVO! Posición real
+    @SerialName("is_actuated") val isActuated: Boolean = true
 )
 
 @Serializable

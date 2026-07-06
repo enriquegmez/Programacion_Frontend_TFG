@@ -54,7 +54,10 @@ fun JointControlScreen(viewModel: JointControlViewModel, isCompact: Boolean = fa
                 FilterChip(
                     selected = selected,
                     onClick = { viewModel.toggleJoint(joint.name, !selected) },
-                    label = { Text(joint.name) },
+                    label = {
+                        val labelText = if (joint.isActuated) joint.name else "${joint.name} 🔒"
+                        Text(labelText)
+                    },
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = cs.secondaryContainer,
                         selectedLabelColor = cs.onSecondaryContainer
@@ -95,13 +98,16 @@ fun JointSliderItem(jointLimit: JointLimit, currentValue: Float, onValueChange: 
 
     SteelCard {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text(jointLimit.name, fontWeight = FontWeight.Bold, color = Color.Black, style = MaterialTheme.typography.titleMedium)
+            val titleText = if (jointLimit.isActuated) jointLimit.name else "${jointLimit.name} (Pasiva)"
+            Text(titleText, fontWeight = FontWeight.Bold, color = Color.Black, style = MaterialTheme.typography.titleMedium)
             Text(String.format("%.2f", value), style = MonoData)
         }
         Spacer(Modifier.height(6.dp))
         Slider(
             value = value, onValueChange = onValueChange, onValueChangeFinished = onDragFinished,
             valueRange = min..max,
+            // Aquí se aplica el bloqueo físico y el cambio de color visual
+            enabled = jointLimit.isActuated,
             colors = SliderDefaults.colors(thumbColor = cs.primary, activeTrackColor = cs.primary, inactiveTrackColor = cs.surfaceContainerHighest)
         )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {

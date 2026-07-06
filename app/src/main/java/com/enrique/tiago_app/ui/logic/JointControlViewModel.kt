@@ -63,6 +63,13 @@ class JointControlViewModel(
     }
 
     fun updateJointValue(jointName: String, newValue: Float) {
+        // ==========================================
+        // ESCUDO DE SEGURIDAD EXTRAS: Ignorar si es pasiva
+        // ==========================================
+        val isActuated = capabilities.value?.capabilities?.controlableJoints
+            ?.find { it.name == jointName }?.isActuated ?: true
+        if (!isActuated) return // Si es pasiva, salimos de inmediato
+
         if (lockedJoints.contains(jointName)) return
 
         val currentTime = System.currentTimeMillis()
