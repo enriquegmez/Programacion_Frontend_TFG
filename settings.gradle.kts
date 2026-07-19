@@ -22,5 +22,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Tiago_app"
+rootProject.name = "R2Pilot"
 include(":app")

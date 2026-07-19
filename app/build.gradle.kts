@@ -5,7 +5,7 @@
 }
 
 android {
-    namespace = "com.enrique.tiago_app"
+    namespace = "com.enrique.r2pilot"
     compileSdk {
         version = release(36) {
             minorApiLevel = 1
@@ -13,7 +13,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.enrique.tiago_app"
+        applicationId = "com.enrique.r2pilot"
         minSdk = 26
         targetSdk = 36
         versionCode = 1

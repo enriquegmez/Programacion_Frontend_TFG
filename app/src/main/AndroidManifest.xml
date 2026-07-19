@@ -13,13 +13,13 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/icono_app_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Tiago_app">
+        android:theme="@style/Theme.R2Pilot">
 
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"
-            android:theme="@style/Theme.Tiago_app">
+            android:theme="@style/Theme.R2Pilot">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
