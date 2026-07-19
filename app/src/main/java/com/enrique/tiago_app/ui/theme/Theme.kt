@@ -1,3 +1,12 @@
+/**
+ * @file Theme.kt
+ * @brief Orquestador del Sistema de Diseño y Tema Global.
+ * @details Implementa la especificación Material Design 3 (M3) adaptada a un entorno
+ *          de control robótico industrial.
+ * @author Enrique Gómez
+ * @date 2026
+ */
+
 package com.enrique.tiago_app.ui.theme
 
 import android.app.Activity
@@ -16,18 +25,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
-/* ============================================================================
- *  TEMA  ·  Esquemas de color "AXON Premium Tech" para Material 3
- *
- *  Decisión clave frente al código original:
- *   - dynamicColor pasa a DESACTIVADO por defecto (antes true). Material You
- *     pisaba la identidad de marca con los colores del móvil del operario,
- *     algo inaceptable en una herramienta de control industrial. Se mantiene
- *     como parámetro opcional por si se quiere ofrecer en ajustes.
- *   - Se define el set completo de roles M3 (containers, outline, error...)
- *     para que CADA @Composable existente se reestilice sin tocarlo.
- * ========================================================================== */
+// ============================================================================
+// ESQUEMAS DE COLOR
+// ============================================================================
 
+/**
+ * @brief Mapeo de tokens para el Modo Oscuro.
+ * @details Asigna la paleta "Obsidiana" a los roles semánticos de Material 3.
+ */
 private val DarkColors = darkColorScheme(
     primary            = RoboCyan,
     onPrimary          = OnAccentInk,
@@ -56,6 +61,10 @@ private val DarkColors = darkColorScheme(
     onErrorContainer   = DarkOnDangerCont,
 )
 
+/**
+ * @brief Mapeo de tokens para el Modo Claro.
+ * @details Asigna la paleta "Platino" a los roles semánticos de Material 3.
+ */
 private val LightColors = lightColorScheme(
     primary            = RoboCyan,
     onPrimary          = OnAccentInk,
@@ -84,13 +93,28 @@ private val LightColors = lightColorScheme(
     onErrorContainer   = LightOnDangerC,
 )
 
+// ============================================================================
+// COMPONENTES PRINCIPALES
+// ============================================================================
+
+/**
+ * @brief Tema principal de la aplicación.
+ * @details Provee la configuración visual (Color, Tipografía y Formas) a toda
+ *          la jerarquía de componentes hijos mediante CompositionLocals.
+ *
+ * @param darkTheme Determina si se fuerza el esquema oscuro (por defecto sigue al sistema).
+ * @param dynamicColor [Falso por defecto] Evita la sobreescritura de la paleta corporativa
+ *                     por los colores extraídos del fondo de pantalla del usuario.
+ * @param content El árbol de UI (Composable) que se renderizará bajo este tema.
+ */
 @Composable
-fun Tiago_appTheme(
+fun R2Pilot_appTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = false,            // ← antes: true
+    dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val colorScheme = when {
+        // Solo usa colores dinámicos si se exige explícitamente y el SO lo soporta (API >= 31)
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val ctx = LocalContext.current
             if (darkTheme) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
@@ -99,7 +123,8 @@ fun Tiago_appTheme(
         else      -> LightColors
     }
 
-    // Barra de estado integrada con el fondo (look "pantalla de control").
+    // Integra la barra de estado superior (Status Bar)
+    // del sistema operativo con el fondo de la app para una experiencia inmersiva de "consola de control".
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
@@ -117,10 +142,15 @@ fun Tiago_appTheme(
     )
 }
 
-/** Alias de marca: nombre nuevo (AXON) sin romper el call-site existente. */
+/**
+ * @brief Alias semántico del tema principal.
+ * @details Proporciona un nombre alineado con la marca actual (R2PILOT) sin romper
+ *          la compatibilidad con llamadas existentes al tema generado por defecto
+ *          (R2Pilot_appTheme) al crear el proyecto en Android Studio.
+ */
 @Composable
-fun AxonTheme(
+fun R2PilotTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     dynamicColor: Boolean = false,
     content: @Composable () -> Unit
-) = Tiago_appTheme(darkTheme, dynamicColor, content)
+) = R2Pilot_appTheme(darkTheme, dynamicColor, content)

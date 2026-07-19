@@ -1,11 +1,26 @@
+/**
+ * @file Shape.kt
+ * @brief Sistema de Formas y Dimensiones del entorno gráfico.
+ * @details Centraliza los radios de borde y las métricas estructurales
+ *          de la aplicación. Separa las constantes visuales de la lógica de las vistas,
+ *          evitando la proliferación de "Magic Numbers" en el código base y garantizando
+ *          la consistencia en toda la interfaz de usuario.
+ * @author Enrique Gómez
+ * @date 2026
+ */
+
 package com.enrique.tiago_app.ui.theme
 
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Shapes
 import androidx.compose.ui.unit.dp
 
-/* Bordes redondeados generosos y consistentes (Material 3). Las tarjetas usan
-   18 dp; los botones/campos 14 dp; los chips se mantienen "pill". */
+/**
+ * @brief Sistema de formas geométricas compatibles con Material Design 3.
+ * @details Define bordes redondeados generosos que aportan un aspecto moderno y
+ *          tecnológico. Diferencia visualmente la jerarquía de los componentes:
+ *          tarjetas (18dp), botones/campos de texto (14dp) y elementos menores.
+ */
 val RoboShapes = Shapes(
     extraSmall = RoundedCornerShape(8.dp),
     small      = RoundedCornerShape(12.dp),
@@ -13,12 +28,3 @@ val RoboShapes = Shapes(
     large      = RoundedCornerShape(18.dp),
     extraLarge = RoundedCornerShape(24.dp),
 )
-
-/* Tokens de tamaño táctil ergonómico (uso con el pulgar, sin mirar). */
-object RoboDimens {
-    val touchTarget = 56.dp     // alto mínimo de botones primarios
-    val sliderThumb = 28.dp     // pulgar de slider grande
-    val joystickSize = 240.dp
-    val cardPadding = 16.dp
-    val screenPadding = 16.dp
-}

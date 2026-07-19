@@ -1,3 +1,13 @@
+/**
+ * @file WebsocketScreen.kt
+ * @brief Interfaz de acceso y configuración de la topología de red.
+ * @details Actúa como punto de entrada de la aplicación. Recoge los parámetros físicos
+ *          de red (IP y Puerto) necesarios para establecer la pasarela de comunicación bidireccional
+ *          (WebSocket) con el servidor que corre en el robot.
+ * @author Enrique Gómez
+ * @date 2026
+ */
+
 package com.enrique.tiago_app.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
@@ -20,26 +30,35 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 
-// IMPORTS DE TU ARQUITECTURA
+// --- IMPORTS DE ARQUITECTURA Y COMPONENTES ---
 import com.enrique.tiago_app.ui.components.PrimaryActionButton
 import com.enrique.tiago_app.ui.logic.MainViewModel
 import com.enrique.tiago_app.utils.AppConstants
 
 /**
- * LoginScreen (Pantalla 1)
- * Recoge la IP y el Puerto para establecer la conexión física (WebSocket).
+ * @brief Pantalla principal de conexión.
+ * @param viewModel Instancia de la capa lógica de negocio (MainViewModel) que inyecta
+ *                  el estado reactivo y expone los manejadores de eventos.
  */
 @Composable
 fun WebsocketScreen(viewModel: MainViewModel) {
-    // 1. Nos suscribimos a los datos del cerebro (ViewModel)
+    // ========================================================================
+    // 1. OBSERVADORES DE ESTADO
+    // ========================================================================
+    // La vista reacciona instantáneamente a los cambios del modelo subyacente.
     val ip by viewModel.ipAddress.collectAsState()
     val port by viewModel.port.collectAsState()
     val globalState by viewModel.globalState.collectAsState()
 
-    // Variable derivada para saber si estamos en pleno proceso de conexión
+    // ========================================================================
+    // 2. VARIABLES DE ESTADO DERIVADO
+    // ========================================================================
+    // Determina si hay un proceso de handshaking en curso.
     val isConnecting = (globalState == AppConstants.GlobalState.ESPERANDO_CONEXION_BACKEND)
 
-    // 2. UI: Contenedor vertical centrado
+    // ========================================================================
+    // 3. ESTRUCTURA DE LA INTERFAZ
+    // ========================================================================
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -47,7 +66,7 @@ fun WebsocketScreen(viewModel: MainViewModel) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        // Título
+        // --- CABECERA ---
         Text(
             text = "Conexión Websocket",
             style = MaterialTheme.typography.headlineMedium,
@@ -56,37 +75,41 @@ fun WebsocketScreen(viewModel: MainViewModel) {
 
         Spacer(modifier = Modifier.height(32.dp))
 
-        // Campo de Texto: IP
+        // --- FORMULARIO DE ENRUTAMIENTO: Dirección IP ---
         OutlinedTextField(
             value = ip,
+            // Mutación del estado mediante UDF: la vista no cambia el valor, le pide al VM que lo haga.
             onValueChange = { newValue -> viewModel.onIpChange(newValue) },
             label = { Text("Dirección IP del Robot") },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(0.8f),
-            enabled = !isConnecting // Se bloquea si está cargando
+            // Bloqueo defensivo: Evita mutaciones mientras se resuelve la promesa de red
+            enabled = !isConnecting
         )
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Campo de Texto: Puerto
+        // --- FORMULARIO DE ENRUTAMIENTO: Puerto TCP ---
         OutlinedTextField(
             value = port,
             onValueChange = { newValue -> viewModel.onPortChange(newValue) },
             label = { Text("Puerto") },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), // Muestra el teclado numérico
+            // Optimización UX: Despliega directamente el teclado numérico en el SO
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             singleLine = true,
             modifier = Modifier.fillMaxWidth(0.8f),
-            enabled = !isConnecting // Se bloquea si está cargando
+            enabled = !isConnecting
         )
 
         Spacer(modifier = Modifier.height(32.dp))
 
-        // Botón de Conectar
+        // --- DESPACHO DE ACCIÓN (Action Dispatcher) ---
         PrimaryActionButton(
             text = "Abrir WebSocket",
             onClick = { viewModel.connectToWebSocket() },
             modifier = Modifier.fillMaxWidth(0.8f),
-            enabled = !isConnecting, // Evita el doble click accidental
+            // Prevención de Condiciones de Carrera (Doble Click) que saturan el servidor
+            enabled = !isConnecting,
             loading = isConnecting,
             onContainer = Color.White
         )

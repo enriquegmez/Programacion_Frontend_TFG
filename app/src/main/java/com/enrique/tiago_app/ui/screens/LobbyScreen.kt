@@ -1,3 +1,14 @@
+/**
+ * @file LobbyScreen.kt
+ * @brief Sala de espera y configuración previa.
+ * @details Pantalla intermedia entre la conexión WebSocket y la inmersión en la teleoperación.
+ *          Permite configurar el middleware de ROS 2 (Domain ID, DDS, Discovery Server)
+ *          y gestionar el estado energético del host remoto (Apagar/Reiniciar) antes de
+ *          saturar la red con suscripciones de tópicos.
+ * @author Enrique Gómez
+ * @date 2026
+ */
+
 package com.enrique.tiago_app.ui.screens
 
 import androidx.compose.foundation.background
@@ -19,6 +30,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+
+// --- IMPORTS DE COMPONENTES Y LÓGICA ---
 import com.enrique.tiago_app.ui.components.DangerButton
 import com.enrique.tiago_app.ui.components.PrimaryActionButton
 import com.enrique.tiago_app.ui.components.SectionTitle
@@ -26,9 +39,18 @@ import com.enrique.tiago_app.ui.components.SteelCard
 import com.enrique.tiago_app.ui.logic.LobbyViewModel
 import com.enrique.tiago_app.utils.AppConstants
 
+/**
+ * @brief Interfaz principal del Lobby de configuración.
+ * @details Coordina la obtención de telemetría del host físico, la validación de
+ *          formularios de red y la inyección de comandos de sistema operativo (Syscalls).
+ * @param viewModel Instancia de [LobbyViewModel] encargada de la lógica de negocio y comunicación.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LobbyScreen(viewModel: LobbyViewModel) {
+    // ========================================================================
+    // 1. ESTADO GLOBAL Y TELEMETRÍA
+    // ========================================================================
     val globalState by viewModel.globalState.collectAsState()
     val telemetry by viewModel.hostTelemetry.collectAsState()
 
@@ -36,23 +58,30 @@ fun LobbyScreen(viewModel: LobbyViewModel) {
     val isLoggingIn = globalState == AppConstants.GlobalState.ESPERANDO_INICIO_SESION
     val isSavingNetwork = globalState == AppConstants.GlobalState.ESPERANDO_RECIBIR_INFORMACION_UNICA
 
-    // Estados para los pop-ups y formularios
+    // ========================================================================
+    // 2. ESTADOS LOCALES
+    // ========================================================================
+    // Banderas para cuadros de diálogo de confirmación (Seguridad Activa)
     var showRebootDialog by remember { mutableStateOf(false) }
     var showShutdownDialog by remember { mutableStateOf(false) }
     var showNetworkSavedDialog by remember { mutableStateOf(false) }
 
-    // Estados del formulario de Red
+    // Memoria del formulario de configuración de Red ROS 2
     var editedDomainId by remember { mutableStateOf("") }
     var editedDds by remember { mutableStateOf("") }
     var editedUseDiscovery by remember { mutableStateOf(false) }
     var isDropdownExpanded by remember { mutableStateOf(false) }
 
-    // ¡MAGIA! Nada más entrar a la pantalla, pedimos la telemetría a Python
+    // ========================================================================
+    // 3. EFECTOS DE CICLO DE VIDA
+    // ========================================================================
+    // Al entrar a la pantalla, se lanza una petición asíncrona para obtener el estado del host.
     LaunchedEffect(Unit) {
         viewModel.fetchTelemetry()
     }
 
-    // Cuando llegan los datos, actualizamos el formulario por defecto
+    // Auto-completado del formulario: Cuando llegan los datos de telemetría,
+    // volcamos los valores actuales del robot en el formulario editable.
     LaunchedEffect(telemetry) {
         if (telemetry != null && editedDomainId.isEmpty()) {
             editedDomainId = telemetry!!.rosDomainId ?: ""
@@ -61,7 +90,10 @@ fun LobbyScreen(viewModel: LobbyViewModel) {
         }
     }
 
-    // --- POP-UP: Confirmar Reinicio (General o tras guardar red) ---
+    // ========================================================================
+    // 4. LÓGICA DEFENSIVA: CUADROS DE DIÁLOGO MODALES
+    // ========================================================================
+    // --- POP-UP: Confirmar Reinicio ---
     if (showRebootDialog || showNetworkSavedDialog) {
         AlertDialog(
             onDismissRequest = {
@@ -122,6 +154,9 @@ fun LobbyScreen(viewModel: LobbyViewModel) {
         )
     }
 
+    // ========================================================================
+    // 5. CONSTRUCCIÓN DE LA INTERFAZ
+    // ========================================================================
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -129,7 +164,7 @@ fun LobbyScreen(viewModel: LobbyViewModel) {
             .padding(start = 16.dp, end = 16.dp, top = 48.dp, bottom = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // --- CABECERA ---
+        // --- CABECERA DE ÉXITO DE CONEXIÓN ---
         Box(
             modifier = Modifier
                 .size(64.dp)
@@ -158,6 +193,7 @@ fun LobbyScreen(viewModel: LobbyViewModel) {
         )
         Spacer(modifier = Modifier.height(24.dp))
 
+        // Si la telemetría aún no ha llegado, mostramos carga
         if (telemetry == null) {
             CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
             Spacer(modifier = Modifier.height(8.dp))
@@ -181,7 +217,7 @@ fun LobbyScreen(viewModel: LobbyViewModel) {
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // Desplegable de DDS
+                // Desplegable de selección de Middleware (DDS)
                 ExposedDropdownMenuBox(
                     expanded = isDropdownExpanded,
                     onExpandedChange = { isDropdownExpanded = !isDropdownExpanded }
@@ -192,7 +228,10 @@ fun LobbyScreen(viewModel: LobbyViewModel) {
                         readOnly = true,
                         label = { Text("Middleware (DDS)") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isDropdownExpanded) },
-                        modifier = Modifier.menuAnchor().fillMaxWidth(),
+                        modifier = Modifier.menuAnchor(
+                            type = MenuAnchorType.PrimaryNotEditable,
+                            enabled = true
+                        ).fillMaxWidth(),
                         shape = MaterialTheme.shapes.small
                     )
                     ExposedDropdownMenu(
@@ -217,6 +256,8 @@ fun LobbyScreen(viewModel: LobbyViewModel) {
                     }
                 }
 
+                // Renderizado condicional: Solo mostramos la opción de Discovery Server
+                // si el middleware seleccionado es compatible (FastRTPS / FastDDS).
                 if (editedDds.contains("fastrtps", ignoreCase = true)) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -233,6 +274,7 @@ fun LobbyScreen(viewModel: LobbyViewModel) {
 
                 Spacer(modifier = Modifier.height(16.dp))
 
+                // Evaluación de estado computado para evitar peticiones redundantes
                 val hasChanges = editedDomainId != t.rosDomainId ||
                         editedDds != t.currentDds ||
                         editedUseDiscovery != t.useDiscovery
@@ -243,6 +285,7 @@ fun LobbyScreen(viewModel: LobbyViewModel) {
                         viewModel.saveNetworkConfig(editedDomainId, editedDds, editedUseDiscovery)
                         showNetworkSavedDialog = true
                     },
+                    // Bloqueo inteligente del botón
                     enabled = hasChanges && !isBusy,
                     icon = Icons.Default.Save,
                     loading = isSavingNetwork,
@@ -252,7 +295,7 @@ fun LobbyScreen(viewModel: LobbyViewModel) {
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // --- TARJETA: ENERGÍA ---
+            // --- TARJETA: CONTROL DE ENERGÍA DE HOST ---
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = MaterialTheme.shapes.large,
@@ -289,10 +332,11 @@ fun LobbyScreen(viewModel: LobbyViewModel) {
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // --- BOTÓN GIGANTE: ENTRAR A ROS 2 ---
+        // --- BOTÓN PRINCIPAL: TRANSICIÓN A LA APP CENTRAL ---
         PrimaryActionButton(
             text = "CONECTAR AL ROBOT",
             onClick = { viewModel.connectToRobot() },
+            // Evitamos la transición si no tenemos la configuración base de la máquina
             enabled = !isBusy && telemetry != null,
             loading = isLoggingIn,
             container = MaterialTheme.colorScheme.tertiary,
@@ -301,6 +345,7 @@ fun LobbyScreen(viewModel: LobbyViewModel) {
 
         Spacer(modifier = Modifier.height(12.dp))
 
+        // Opción de abortar
         OutlinedButton(
             onClick = { viewModel.disconnectFromServer() },
             modifier = Modifier.fillMaxWidth().height(50.dp),

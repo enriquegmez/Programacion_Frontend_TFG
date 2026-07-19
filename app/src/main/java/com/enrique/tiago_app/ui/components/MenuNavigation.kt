@@ -1,3 +1,11 @@
+/**
+ * @file MenuNavigation.kt
+ * @brief Componentes visuales reutilizables para la navegación y disposición de la interfaz.
+ * @details Este archivo contiene la lógica visual de la barra de navegación inferior
+ *          con su sistema de menús desplegables, así como los controles para
+ *          gestionar la vista en pantalla dividida.
+ */
+
 package com.enrique.tiago_app.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
@@ -23,21 +31,10 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
-/* ============================================================================
- *  NAVEGACIÓN AXON  ·  Barra flotante inferior con speed-dial
- *
- *  4 ranuras:
- *    - Inicio       -> Dashboard (acción directa)
- *    - Control      -> despliega: Teleoperación, Acciones, Articulaciones
- *    - Datos        -> despliega: Cámara, Análisis, Sensores
- *    - Desconectar  -> acción directa
- *
- *  Las opciones cuyo hardware no está disponible se muestran DESHABILITADAS
- *  (en gris, no pulsables). Las rutas deben coincidir con las del NavHost.
- * ========================================================================== */
-
-/** ⚠️ Alinear con las rutas reales del NavController existente. */
-object AxonRoutes {
+/**
+ * @brief Rutas estáticas que deben coincidir exactamente con el NavHost de MainActivity.
+ */
+object Routes {
     const val DASHBOARD = "dashboard"
     const val TELEOP    = "teleop"
     const val CAMERA    = "camera"
@@ -47,31 +44,34 @@ object AxonRoutes {
     const val SENSORS   = "sensors"
 }
 
-data class AxonDestination(val route: String, val label: String, val icon: ImageVector)
+/** @brief Modelo de datos para representar un botón dentro del submenú. */
+data class Destination(val route: String, val label: String, val icon: ImageVector)
 
-/** Opciones del grupo "Control". */
-val AxonControlDestinations = listOf(
-    AxonDestination(AxonRoutes.TELEOP, "Teleoperación",  Icons.Default.ControlCamera),
-    AxonDestination(AxonRoutes.MOTION, "Acciones",       Icons.Default.PlayArrow),
-    AxonDestination(AxonRoutes.JOINTS, "Articulaciones", Icons.Default.PrecisionManufacturing),
+/** Opciones que aparecerán al pulsar la ranura "Control". */
+val ControlDestinations = listOf(
+    Destination(Routes.TELEOP, "Teleoperación",  Icons.Default.ControlCamera),
+    Destination(Routes.MOTION, "Acciones",       Icons.Default.PlayArrow),
+    Destination(Routes.JOINTS, "Articulaciones", Icons.Default.PrecisionManufacturing),
 )
 
-/** Opciones del grupo "Datos". */
-val AxonDataDestinations = listOf(
-    AxonDestination(AxonRoutes.CAMERA,  "Cámara",   Icons.Default.Videocam),
-    AxonDestination(AxonRoutes.INVEST,  "Análisis", Icons.Default.Search),
-    AxonDestination(AxonRoutes.SENSORS, "Sensores", Icons.Default.Sensors),
+/** Opciones que aparecerán al pulsar la ranura "Datos". */
+val DataDestinations = listOf(
+    Destination(Routes.CAMERA,  "Cámara",   Icons.Default.Videocam),
+    Destination(Routes.INVEST,  "Análisis", Icons.Default.Search),
+    Destination(Routes.SENSORS, "Sensores", Icons.Default.Sensors),
 )
 
 /**
- * Barra flotante inferior + speed-dial.
- *
- * @param currentRoute ruta activa (string) para resaltar el grupo/ítem.
- * @param enabledRoutes conjunto de rutas habilitadas según capacidades del robot.
- *        Cualquier ruta que NO esté aquí se pinta en gris y no responde.
+ * @brief Componente principal de la barra de navegación flotante inferior.
+ * @param currentRoute Ruta actual activa para resaltar el icono correspondiente.
+ * @param enabledRoutes Set de rutas permitidas. Se evalúa contra las capacidades reales del robot.
+ * @param onNavigate Callback para ejecutar el salto de pantalla.
+ * @param onDisconnect Callback para ordenar el cierre de sesión al Director.
+ * @param onOpenChange Callback para avisar a la pantalla superior que oscurezca el fondo (velo).
+ * @param closeSignal Trigger numérico: si cambia, fuerza el cierre del menú desplegable.
  */
 @Composable
-fun AxonBottomBar(
+fun BottomBar(
     currentRoute: String?,
     enabledRoutes: Set<String>,
     onNavigate: (String) -> Unit,
@@ -81,24 +81,30 @@ fun AxonBottomBar(
 ) {
     val cs = MaterialTheme.colorScheme
 
-    // Qué speed-dial está abierto: null | "control" | "datos"
+    // --- ESTADO LOCAL DEL MENÚ ---
+    // Guarda qué submenú está abierto actualmente: null (ninguno), "control" o "datos"
     var openGroup by remember { mutableStateOf<String?>(null) }
 
-    // Cuando MainScreen incrementa closeSignal (p. ej. al tocar el velo), cerramos.
+    // --- EFECTOS SECUNDARIOS (REACCIÓN A EVENTOS EXTERNOS) ---
+    // Si el usuario toca la pantalla fuera de la barra (señal enviada desde MainScreen),
+    // cerramos cualquier menú desplegable activo.
     LaunchedEffect(closeSignal) {
         if (closeSignal > 0) openGroup = null
     }
 
-    // Avisamos a MainScreen para que pinte (o no) el velo blanco a pantalla completa.
-    LaunchedEffect(openGroup) { onOpenChange(openGroup != null) }
+    // Cada vez que cambia el menú abierto, avisamos a la pantalla superior
+    // para que dibuje o quite un "velo" semitransparente detrás de esta barra.
+    LaunchedEffect(openGroup) {
+        onOpenChange(openGroup != null)
+    }
 
-    val controlActive = AxonControlDestinations.any { it.route == currentRoute }
-    val dataActive = AxonDataDestinations.any { it.route == currentRoute }
+    // --- CÁLCULO DE RESALTADO ---
+    // Determinamos si el icono principal de "Control" o "Datos" debe brillar
+    // porque una de sus sub-rutas es la pantalla actual.
+    val controlActive = ControlDestinations.any { it.route == currentRoute }
+    val dataActive = DataDestinations.any { it.route == currentRoute }
 
     Box(modifier = Modifier.fillMaxWidth()) {
-
-        // (El velo blanco a pantalla completa lo pinta MainScreen por detrás.)
-
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -107,13 +113,16 @@ fun AxonBottomBar(
                 .align(Alignment.BottomCenter),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // --- SPEED-DIAL: opciones que suben encima de la barra ---
+            // --- BLOQUE 1: EL MENÚ DESPLEGABLE ---
+            // Cargamos la lista de botones correspondiente al menú que el usuario ha tocado.
             val groupDestinations = when (openGroup) {
-                "control" -> AxonControlDestinations
-                "datos"   -> AxonDataDestinations
+                "control" -> ControlDestinations
+                "datos"   -> DataDestinations
                 else      -> emptyList()
             }
 
+            // AnimatedVisibility maneja automáticamente la transición de entrada (subir flotando)
+            // y salida (desaparecer hacia abajo) sin bloquear el hilo de la UI.
             AnimatedVisibility(
                 visible = openGroup != null,
                 enter = fadeIn() + expandVertically(),
@@ -125,7 +134,9 @@ fun AxonBottomBar(
                     modifier = Modifier.padding(bottom = 16.dp)
                 ) {
                     groupDestinations.forEach { dest ->
+                        // Evaluamos dinámicamente si el hardware de esta vista existe
                         val enabled = dest.route in enabledRoutes
+
                         SpeedDialItem(
                             dest = dest,
                             enabled = enabled,
@@ -133,7 +144,7 @@ fun AxonBottomBar(
                             onClick = {
                                 if (enabled) {
                                     onNavigate(dest.route)
-                                    openGroup = null
+                                    openGroup = null // Auto-cerramos el menú al navegar
                                 }
                             }
                         )
@@ -141,7 +152,7 @@ fun AxonBottomBar(
                 }
             }
 
-            // --- LA BARRA FLOTANTE (píldora) ---
+            // --- BLOQUE 2: LA BARRA PRINCIPAL ---
             Surface(
                 shape = RoundedCornerShape(28.dp),
                 color = cs.surface,
@@ -156,33 +167,33 @@ fun AxonBottomBar(
                     horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // INICIO (directo)
+                    // Botón directo a Home/Dashboard
                     BarSlot(
                         icon = Icons.Default.GridView,
                         label = "Inicio",
-                        selected = currentRoute == AxonRoutes.DASHBOARD,
-                        onClick = { openGroup = null; onNavigate(AxonRoutes.DASHBOARD) }
+                        selected = currentRoute == Routes.DASHBOARD,
+                        onClick = { openGroup = null; onNavigate(Routes.DASHBOARD) }
                     )
-                    // CONTROL (grupo)
+                    // Botón para expandir herramientas motrices
                     BarSlot(
                         icon = Icons.Default.SportsEsports,
                         label = "Control",
                         selected = controlActive || openGroup == "control",
                         onClick = { openGroup = if (openGroup == "control") null else "control" }
                     )
-                    // DATOS (grupo)
+                    // Botón para expandir visualización y telemetría
                     BarSlot(
                         icon = Icons.Default.Insights,
                         label = "Datos",
                         selected = dataActive || openGroup == "datos",
                         onClick = { openGroup = if (openGroup == "datos") null else "datos" }
                     )
-                    // DESCONECTAR (directo, en rojo)
+                    // Botón directo para abortar y volver al Lobby
                     BarSlot(
                         icon = Icons.Default.PowerSettingsNew,
                         label = "Desconectar",
                         selected = false,
-                        tint = cs.error,
+                        tint = cs.error, // Lo forzamos a rojo por su naturaleza destructiva
                         onClick = { openGroup = null; onDisconnect() }
                     )
                 }
@@ -191,7 +202,9 @@ fun AxonBottomBar(
     }
 }
 
-/** Ranura de la barra: icono + etiqueta, resaltado si está activa. */
+/**
+ * @brief Representa un botón individual (ranura) dentro de la barra flotante.
+ */
 @Composable
 private fun BarSlot(
     icon: ImageVector,
@@ -201,7 +214,10 @@ private fun BarSlot(
     tint: Color? = null,
 ) {
     val cs = MaterialTheme.colorScheme
+
+    // Si no se provee un color fijo (tint), calculamos si es Primario (activo) o Gris (inactivo)
     val content = tint ?: if (selected) cs.primary else cs.onSurfaceVariant
+
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
@@ -215,23 +231,30 @@ private fun BarSlot(
             label,
             style = MaterialTheme.typography.labelSmall,
             color = content,
+            // Hacemos el texto bold si está seleccionado para guiar la vista
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
             maxLines = 1
         )
     }
 }
 
-/** Pastilla del speed-dial: etiqueta a la izquierda + botón circular con icono. */
+/**
+ * @brief Representa una opción del submenú desplegable (Etiqueta + Botón Flotante Circular).
+ */
 @Composable
 private fun SpeedDialItem(
-    dest: AxonDestination,
+    dest: Destination,
     enabled: Boolean,
     selected: Boolean,
     onClick: () -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
 
-    // Colores según estado (habilitado / deshabilitado / seleccionado)
+    // --- LÓGICA DE COLORES REACTIVA ---
+    // Calculamos el estilo visual combinando 3 estados posibles:
+    // 1. Deshabilitado por hardware (Gris apagado + icono de candado)
+    // 2. Activo y en pantalla actual (Color Primario puro)
+    // 3. Activo pero en otra pantalla (Color neutro)
     val circleColor = when {
         !enabled -> cs.surfaceVariant
         selected -> cs.primary
@@ -249,7 +272,7 @@ private fun SpeedDialItem(
         horizontalArrangement = Arrangement.End,
         modifier = Modifier.fillMaxWidth()
     ) {
-        // Etiqueta (pastilla)
+        // --- TEXTO A LA IZQUIERDA ---
         Surface(
             shape = RoundedCornerShape(12.dp),
             color = labelBg,
@@ -266,6 +289,8 @@ private fun SpeedDialItem(
                     color = labelColor,
                     fontWeight = FontWeight.Bold
                 )
+
+                // Si el robot no tiene este hardware, incrustamos un candado
                 if (!enabled) {
                     Spacer(Modifier.width(6.dp))
                     Icon(
@@ -280,7 +305,7 @@ private fun SpeedDialItem(
 
         Spacer(Modifier.width(12.dp))
 
-        // Botón circular
+        // --- BOTÓN CIRCULAR PRINCIPAL ---
         Box(
             modifier = Modifier
                 .size(52.dp)
@@ -298,8 +323,12 @@ private fun SpeedDialItem(
 }
 
 /* ----------------------------------------------------------------------------
- *  CONTROL "DIVIDIR"  ·  SingleChoiceSegmentedButtonRow (sin cambios de lógica)
+ *  CONTROL "DIVIDIR"
  * -------------------------------------------------------------------------- */
+
+/**
+ * @brief Interruptor superior para decidir si la pantalla es completa o se divide en dos (Split Screen).
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SplitSegmentedControl(
@@ -308,7 +337,9 @@ fun SplitSegmentedControl(
     modifier: Modifier = Modifier,
 ) {
     val cs = MaterialTheme.colorScheme
-    // Azul claro de marca para la selección (en vez del ámbar por defecto).
+
+    // Paleta de colores personalizada para anular el color "ámbar" por defecto de Material 3
+    // y forzar los tonos corporativos de la aplicación.
     val segColors = SegmentedButtonDefaults.colors(
         activeContainerColor = cs.primary.copy(alpha = 0.15f),
         activeContentColor = cs.primary,
@@ -317,6 +348,7 @@ fun SplitSegmentedControl(
         inactiveContentColor = cs.onSurfaceVariant,
         inactiveBorderColor = cs.outline,
     )
+
     SingleChoiceSegmentedButtonRow(modifier.fillMaxWidth()) {
         SegmentedButton(
             selected = !split,
@@ -324,6 +356,7 @@ fun SplitSegmentedControl(
             shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
             colors = segColors,
         ) { Text("Vista completa", fontWeight = FontWeight.Bold) }
+
         SegmentedButton(
             selected = split,
             onClick = { onSplitChange(true) },
@@ -333,48 +366,14 @@ fun SplitSegmentedControl(
     }
 }
 
-/**
- * Selector del panel superior en modo dividido (Cámara / Sensores).
- * @param cameraEnabled si el robot no tiene cámara, la opción Cámara se bloquea.
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun SplitTopSourceControl(
-    topIsCamera: Boolean,
-    onSelect: (Boolean) -> Unit,
-    modifier: Modifier = Modifier,
-    cameraEnabled: Boolean = true,
-) {
-    val cs = MaterialTheme.colorScheme
-    val segColors = SegmentedButtonDefaults.colors(
-        activeContainerColor = cs.primary.copy(alpha = 0.15f),
-        activeContentColor = cs.primary,
-        activeBorderColor = cs.primary.copy(alpha = 0.5f),
-        inactiveContainerColor = cs.surface,
-        inactiveContentColor = cs.onSurfaceVariant,
-        inactiveBorderColor = cs.outline,
-    )
-    SingleChoiceSegmentedButtonRow(modifier) {
-        SegmentedButton(
-            selected = topIsCamera && cameraEnabled,
-            onClick = { if (cameraEnabled) onSelect(true) },
-            enabled = cameraEnabled,
-            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-            colors = segColors,
-        ) { Text("Cámara") }
-        SegmentedButton(
-            selected = !topIsCamera || !cameraEnabled,
-            onClick = { onSelect(false) },
-            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-            colors = segColors,
-        ) { Text("Sensores") }
-    }
-}
 /* ============================================================================
- *  SELECTOR FLOTANTE DE FUENTE (Cámara / Sensores) para PANTALLA DIVIDIDA
- *  Aparece al pulsar "Dividida". Velo blanco detrás (coherente con el speed-dial
- *  del menú inferior) y dos opciones grandes. Al elegir, se cierra.
+ *  SELECTOR FLOTANTE DE FUENTE (Cámara / Sensores)
+ *  Overlay a pantalla completa que se dispara al activar el modo "Dividida".
  * ========================================================================== */
+
+/**
+ * @brief Pantalla emergente para obligar al usuario a elegir la fuente de datos del panel superior.
+ */
 @Composable
 fun SplitSourcePicker(
     visible: Boolean,
@@ -385,13 +384,17 @@ fun SplitSourcePicker(
 ) {
     val cs = MaterialTheme.colorScheme
 
+    // La animación gestiona la entrada suave del velo blanco
     AnimatedVisibility(visible = visible, enter = fadeIn(), exit = fadeOut()) {
+
+        // --- CAJA PROTECTORA Y FONDO TRANSLÚCIDO ---
+        // Absorbe los toques (para no interactuar con lo que hay debajo)
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.White.copy(alpha = 0.85f))
                 .clickable(
-                    indication = null,
+                    indication = null, // Desactiva el efecto "onda" de toque de Android
                     interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
                 ) { onDismiss() },
             contentAlignment = Alignment.TopCenter
@@ -408,12 +411,14 @@ fun SplitSourcePicker(
                     color = cs.onBackground
                 )
 
+                // Renderizamos las dos tarjetas de selección
                 SourceOption(
                     icon = Icons.Default.Videocam,
                     label = "Cámara",
                     enabled = cameraEnabled,
                     onClick = { if (cameraEnabled) onSelectCamera() }
                 )
+
                 SourceOption(
                     icon = Icons.Default.Insights,
                     label = "Sensores",
@@ -425,6 +430,9 @@ fun SplitSourcePicker(
     }
 }
 
+/**
+ * @brief Tarjeta de selección individual para el componente SplitSourcePicker.
+ */
 @Composable
 private fun SourceOption(
     icon: ImageVector,
@@ -433,6 +441,8 @@ private fun SourceOption(
     onClick: () -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
+
+    // Cálculo visual reactivo: Degradamos los colores si no hay hardware habilitado
     val container = if (enabled) cs.surface else cs.surfaceVariant.copy(alpha = 0.6f)
     val content = if (enabled) cs.primary else cs.onSurfaceVariant.copy(alpha = 0.5f)
     val borderColor = if (enabled) cs.primary.copy(alpha = 0.4f) else cs.outline
@@ -450,6 +460,7 @@ private fun SourceOption(
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Icono envuelto en un círculo suave
             Box(
                 Modifier.size(40.dp).clip(CircleShape).background(content.copy(alpha = 0.12f)),
                 contentAlignment = Alignment.Center
@@ -457,12 +468,15 @@ private fun SourceOption(
                 Icon(icon, contentDescription = label, tint = content, modifier = Modifier.size(22.dp))
             }
             Spacer(Modifier.width(14.dp))
+
             Text(
                 label,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = if (enabled) cs.onSurface else content
             )
+
+            // Renderizamos el candado a la derecha si está inactivo
             if (!enabled) {
                 Spacer(Modifier.weight(1f))
                 Icon(Icons.Default.Lock, contentDescription = "No disponible", tint = content, modifier = Modifier.size(18.dp))

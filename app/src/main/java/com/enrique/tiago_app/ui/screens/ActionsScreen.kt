@@ -1,6 +1,15 @@
+/**
+ * @file ActionsScreen.kt
+ * @brief Pantalla para la ejecución de animaciones y movimientos pregrabados del robot.
+ * @details Implementa una interfaz de dos caras: un menú de selección de acciones
+ *          (cuando está en reposo) y un panel de telemetría/progreso (cuando el robot se está moviendo).
+ *          Soporta un modo "Compacto" para incrustarse en otras vistas.
+ * @author Enrique Gómez
+ * @date 2026
+ */
+
 package com.enrique.tiago_app.ui.screens
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -20,16 +29,31 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextAlign
 
+// --- IMPORTS DE LA LÓGICA Y CONSTANTES ---
 import com.enrique.tiago_app.ui.logic.PlayMotionViewModel
 import com.enrique.tiago_app.utils.AppConstants
 
+/**
+ * @brief Renderiza la vista de ejecución de movimientos predefinidos (Play Motion).
+ * @details Muestra una lista interactiva de animaciones disponibles en estado de reposo,
+ *          y un panel de ejecución y parada de emergencia cuando hay una acción en progreso.
+ *          Se adapta dinámicamente al espacio disponible mediante el parámetro [isCompact].
+ * @param viewModel Instancia de [PlayMotionViewModel] que inyecta los flujos de estado
+ *                  y procesa las intenciones del usuario.
+ * @param isCompact Indica si la vista se está renderizando en un contenedor reducido
+ *                  (pantalla dividida). Si es true, reduce paddings
+ *                  y oculta textos secundarios para maximizar el área útil.
+ */
 @Composable
 fun PlayMotionScreen(
     viewModel: PlayMotionViewModel,
-    isCompact: Boolean = false // ¡NUEVO! Parámetro para la pantalla dividida
+    isCompact: Boolean = false // Modo adaptativo: true reduce márgenes y oculta textos secundarios
 ) {
-    // 1. Observamos los estados desde el ViewModel
+    // ========================================================================
+    // OBSERVADORES DE ESTADO
+    // ========================================================================
     val availableActions by viewModel.availableActions.collectAsState()
     val movementState by viewModel.movementState.collectAsState()
     val selectedAction by viewModel.selectedAction.collectAsState()
@@ -38,12 +62,14 @@ fun PlayMotionScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            // ¡CAMBIO! Reducimos el padding general si estamos en espacio reducido
+            // Padding dinámico: menor espacio si está el modo dividido
             .padding(if (isCompact) 4.dp else 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // --- CABECERA ---
-        // ¡CAMBIO! Ocultamos los textos grandes si estamos en pantalla dividida
+        // ========================================================================
+        // 1. CABECERA INFORMATIVA
+        // ========================================================================
+        // Se oculta en el modo compacto para maximizar el espacio útil para los botones.
         if (!isCompact) {
             Text(
                 text = "Movimientos Predefinidos",
@@ -59,25 +85,27 @@ fun PlayMotionScreen(
             Spacer(modifier = Modifier.height(16.dp))
         }
 
-        // --- LÓGICA DE PANTALLAS (Según el estado del semáforo) ---
-        // 1. Definimos cuáles son los estados exclusivos de las Acciones
+        // ========================================================================
+        // 2. ENRUTADOR VISUAL DE ESTADOS
+        // ========================================================================
+        // Evaluamos si el semáforo global está bloqueado por una acción en curso
         val isActionState = movementState == AppConstants.MovementState.ESPERANDO_EJECUTAR_ACCION ||
                 movementState == AppConstants.MovementState.ESPERANDO_DETENER_ACCION
 
-        // 2. Si NO estamos en un estado de acción, mostramos el menú normal.
-        // (Esto incluye IDLE, o estados temporales de apagado de otras herramientas).
         if (!isActionState) {
-            // ESTADO: REPOSO (Mostrar la lista)
+            // --------------------------------------------------------------------
+            // VISTA A: REPOSO (LISTADO DE MOVIMIENTOS)
+            // --------------------------------------------------------------------
 
-            // ¡CAMBIO! Solo mostramos el botón de escanear en pantalla completa
+            // Botón superior de escaneo (Solo visible en pantalla completa)
             if (!isCompact) {
                 Button(
                     onClick = { viewModel.fetchAvailableActions() },
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary, // O el color que uses de fondo
-                        contentColor = Color.White // Esto pone tanto el Icono como el Texto en blanco
-                )
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = Color.White
+                    )
                 ) {
                     Icon(Icons.Default.Refresh, contentDescription = "Actualizar")
                     Spacer(modifier = Modifier.width(8.dp))
@@ -86,19 +114,19 @@ fun PlayMotionScreen(
                 Spacer(modifier = Modifier.height(16.dp))
             }
 
+            // Área central: Lista o Mensaje de estado vacío
             if (availableActions.isEmpty()) {
                 Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
                     Text(
-                        // Mensaje dinámico por si están en pantalla dividida y no tienen acciones
                         text = if (isCompact) "Sal de la pantalla dividida para escanear movimientos."
                         else "No hay movimientos cargados.\nPulsa el botón superior para buscarlos.",
                         color = Color.Gray,
                         style = MaterialTheme.typography.bodyLarge,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        textAlign = TextAlign.Center
                     )
                 }
             } else {
-                // Lista de movimientos
+                // Lista scrolleable de acciones disponibles
                 LazyColumn(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -116,7 +144,7 @@ fun PlayMotionScreen(
                         ) {
                             Text(
                                 text = actionName.uppercase(),
-                                modifier = Modifier.padding(if (isCompact) 12.dp else 16.dp), // Un poco más fino en modo compacto
+                                modifier = Modifier.padding(if (isCompact) 12.dp else 16.dp),
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                                 color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
                             )
@@ -127,18 +155,18 @@ fun PlayMotionScreen(
 
             Spacer(modifier = Modifier.height(if (isCompact) 8.dp else 16.dp))
 
-            // Botón de Ejecutar
+            // Botón inferior: Ejecutar (Deshabilitado si no hay selección)
             Button(
                 onClick = { viewModel.executeSelectedAction() },
-                enabled = selectedAction != null, // Solo se activa si has tocado uno
+                enabled = selectedAction != null,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF4CAF50), // Verde
+                    containerColor = Color(0xFF4CAF50), // Verde de confirmación
                     disabledContainerColor = Color.LightGray,
                     contentColor = Color.White
                 ),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(if (isCompact) 45.dp else 50.dp) // Un pelín más pequeño en compacto
+                    .height(if (isCompact) 45.dp else 50.dp)
             ) {
                 Icon(Icons.Default.PlayArrow, contentDescription = "Ejecutar")
                 Spacer(modifier = Modifier.width(8.dp))
@@ -146,7 +174,9 @@ fun PlayMotionScreen(
             }
 
         } else {
-            // ESTADO: EJECUTANDO ACCIÓN O ESPERANDO PARAR
+            // --------------------------------------------------------------------
+            // VISTA B: EJECUCIÓN (MONITORIZACIÓN Y PARADA DE EMERGENCIA)
+            // --------------------------------------------------------------------
             Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
                 ElevatedCard(
                     modifier = Modifier.fillMaxWidth().padding(if (isCompact) 4.dp else 16.dp)
@@ -162,16 +192,16 @@ fun PlayMotionScreen(
                         )
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        // Estado / Detalles devueltos por ROS 2
+                        // Feedback textual (ej. "Moviendo brazo izquierdo...")
                         Text(
                             text = currentFeedback?.details ?: "Enviando orden al robot...",
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.primary,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            textAlign = TextAlign.Center
                         )
                         Spacer(modifier = Modifier.height(if (isCompact) 16.dp else 24.dp))
 
-                        // Barra de progreso
+                        // Feedback visual (Barra de progreso del action server)
                         val progressValue = (currentFeedback?.progress ?: 0) / 100f
                         LinearProgressIndicator(
                             progress = { progressValue },
@@ -182,11 +212,12 @@ fun PlayMotionScreen(
 
                         Spacer(modifier = Modifier.height(if (isCompact) 16.dp else 32.dp))
 
-                        // Botón de Detener
+                        // Botón destructivo: Parada de emergencia
+                        // Se bloquea automáticamente al pulsarlo una vez para evitar saturar el canal (Spam).
                         val isStopping = movementState == AppConstants.MovementState.ESPERANDO_DETENER_ACCION
                         Button(
                             onClick = { viewModel.stopCurrentAction() },
-                            enabled = !isStopping, // Si ya le hemos dado, lo bloqueamos para no spamear
+                            enabled = !isStopping,
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = MaterialTheme.colorScheme.error,
                                 disabledContainerColor = Color.Gray,

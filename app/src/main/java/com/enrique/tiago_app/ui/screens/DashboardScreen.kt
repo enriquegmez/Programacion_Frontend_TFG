@@ -1,3 +1,13 @@
+/**
+ * @file DashboardScreen.kt
+ * @brief Vista principal de telemetría y estado global del sistema (Dashboard).
+ * @details Representa visualmente los datos estáticos (Hardware, Capacidades de ROS 2) y
+ *          dinámicos (Batería, Telemetría del PC anfitrión). Diseñada bajo un paradigma
+ *          reactivo (Unidirectional Data Flow) para actualizarse en tiempo real.
+ * @author Enrique Gómez
+ * @date 2026
+ */
+
 package com.enrique.tiago_app.ui.screens
 
 import androidx.compose.foundation.background
@@ -6,10 +16,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.Shield
-import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.outlined.Videocam
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -18,21 +25,38 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+
+// --- IMPORTS PROPIOS ---
 import com.enrique.tiago_app.ui.components.*
 import com.enrique.tiago_app.ui.logic.MainViewModel
 import com.enrique.tiago_app.ui.theme.MonoData
 import com.enrique.tiago_app.ui.theme.MonoLabel
 
+/**
+ * @brief Renderiza el panel de control central (Dashboard).
+ * @details Actúa como pantalla principal tras una conexión exitosa.
+ *          Maneja internamente un estado de carga (Loading) hasta que el backend remite
+ *          el primer paquete de datos. Una vez recibido, distribuye la información en tarjetas modulares.
+ * @param mainViewModel Instancia que provee los flujos de estado (Telemetría del PC y Capacidades del robot).
+ */
 @Composable
-fun DashboardView(mainViewModel: MainViewModel) {
+fun DashboardScreen(mainViewModel: MainViewModel) {
+    // ========================================================================
+    // 1. OBSERVADORES DE ESTADO (Reactividad)
+    // ========================================================================
+    // Manifiesto estático/lento (Hardware, red, batería)
     val robotData by mainViewModel.robotCapabilities.collectAsState()
 
-    // ¡MAGIA! Observamos la telemetría real del PC tal y como haces en el Lobby
+    // Telemetría rápida (CPU, RAM, Temp del Host PC)
     val telemetry by mainViewModel.hostTelemetry.collectAsState()
 
     val scrollState = rememberScrollState()
     val cs = MaterialTheme.colorScheme
 
+    // ========================================================================
+    // 2. ESTADO TRANSITORIO (Loading)
+    // ========================================================================
+    // Evita errores de NullPointerException mientras se negocia la conexión ROS 2
     if (robotData == null) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -41,9 +65,10 @@ fun DashboardView(mainViewModel: MainViewModel) {
                 Text("Escaneando hardware del robot...", style = MaterialTheme.typography.bodyLarge)
             }
         }
-        return
+        return // Interrumpe la composición de la vista principal hasta tener datos
     }
 
+    // Extracción segura de datos estructurales
     val identity = robotData?.identity
     val status = robotData?.status
     val caps = robotData?.capabilities ?: return
@@ -51,11 +76,15 @@ fun DashboardView(mainViewModel: MainViewModel) {
     val batPct = status?.batteryPct ?: 0.0
     val charging = status?.isCharging == true
 
+    // ========================================================================
+    // 3. RENDERIZADO DEL PANEL CENTRAL
+    // ========================================================================
     Column(
         Modifier.fillMaxSize().verticalScroll(scrollState).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // --- HERO: anillo de batería + estado de conexión ---
+        // --- BLOQUE A: Tarjeta Principal (Hero) ---
+        // Muestra el estado vital del robot (Batería y Parada de Emergencia)
         SteelCard {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 MetricRing(
@@ -76,6 +105,7 @@ fun DashboardView(mainViewModel: MainViewModel) {
                             text = if (charging) "Cargando" else "En línea",
                             color = if (charging) cs.secondary else cs.tertiary
                         )
+                        // Alerta roja si el e-stop (botón del pánico) está pulsado
                         when (status?.eStopActive) {
                             true -> StatusPill("¡E-STOP ACTIVADO!", cs.error)
                             false -> StatusPill("E-Stop seguro", cs.tertiary)
@@ -86,7 +116,8 @@ fun DashboardView(mainViewModel: MainViewModel) {
             }
         }
 
-        // --- MÉTRICAS DEL HOST (Con datos reales de tu backend) ---
+        // --- BLOQUE B: Telemetría del Servidor Anfitrión (PC) ---
+        // Monitoriza el impacto computacional de ROS 2 sobre la máquina física
         if (telemetry != null) {
             val safeCpu = telemetry!!.cpuPct?.toInt() ?: 0
             val safeRam = telemetry!!.ramPct?.toInt() ?: 0
@@ -97,10 +128,9 @@ fun DashboardView(mainViewModel: MainViewModel) {
                 HostMetricCard("RAM", safeRam, "%", cs.primary, threshold = 85, modifier = Modifier.weight(1f))
                 HostMetricCard("Temp", safeTemp, "°", cs.tertiary, threshold = 90, modifier = Modifier.weight(1f))
             }
-
         }
 
-        // --- IDENTIDAD DE RED ---
+        // --- BLOQUE C: Identidad en el Grafo ROS 2 ---
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = MaterialTheme.shapes.large,
@@ -117,7 +147,8 @@ fun DashboardView(mainViewModel: MainViewModel) {
             }
         }
 
-        // --- CAPACIDADES como AssistChips ---
+        // --- BLOQUE D: Inventario de Nodos y Capacidades ---
+        // Transforma los booleanos del backend en un listado visual de "Chips"
         val capList = listOf(
             "Base Móvil" to caps.hasBase,
             "Brazo" to caps.hasManipulator,
@@ -149,7 +180,7 @@ fun DashboardView(mainViewModel: MainViewModel) {
             }
         }
 
-        // --- CÁMARAS ---
+        // --- BLOQUE E: Inventario Multimedia (Cámaras) ---
         Surface(shape = MaterialTheme.shapes.large, color = cs.primaryContainer) {
             Column(Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -171,13 +202,23 @@ fun DashboardView(mainViewModel: MainViewModel) {
     }
 }
 
+/**
+ * @brief Tarjeta individual para monitorizar un parámetro del PC Host.
+ * @details Implementa lógica condicional de colores (Thresholding): advierte visualmente
+ *          al operador si un valor (ej. Temperatura del hardware) entra en rango crítico.
+ */
 @Composable
-private fun HostMetricCard(label: String, value: Int, unit: String, color: androidx.compose.ui.graphics.Color, threshold: Int, modifier: Modifier = Modifier) {
-
-    // Si el valor supera el umbral, el anillo se pinta en rojo (alerta).
+private fun HostMetricCard(
+    label: String,
+    value: Int,
+    unit: String,
+    color: androidx.compose.ui.graphics.Color,
+    threshold: Int,
+    modifier: Modifier = Modifier
+) {
+    // Evaluación semántica del dato para alterar la interfaz gráfica
     val isHigh = value >= threshold
     val ringColor = if (isHigh) MaterialTheme.colorScheme.error else color
-
 
     Surface(
         modifier = modifier,
@@ -198,39 +239,48 @@ private fun HostMetricCard(label: String, value: Int, unit: String, color: andro
     }
 }
 
+/**
+ * @brief Componente de campo de texto de solo lectura con diseño adaptado.
+ * @details Utiliza un diseño de etiqueta superpuesta (Floating Label) que "corta"
+ *          la línea del borde superior.
+ */
 @Composable
 private fun MiniField(label: String, value: String, modifier: Modifier = Modifier) {
-    Box(modifier = modifier.padding(top = 8.dp)) { // Margen superior para dejar espacio al título
+    Box(modifier = modifier.padding(top = 8.dp)) {
         Surface(
             shape = MaterialTheme.shapes.medium,
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f), // Un poco más transparente para resaltar el texto
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f),
             border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
             modifier = Modifier.fillMaxWidth()
         ) {
-            // El texto de valor interior ahora es más pequeño
             Text(
                 text = value,
-                style = MonoData.copy(fontSize = 14.sp), // Tamaño reducido (ajústalo si lo necesitas aún más pequeño)
+                style = MonoData.copy(fontSize = 14.sp),
                 color = MaterialTheme.colorScheme.onSurface,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(start = 14.dp, end = 14.dp, top = 16.dp, bottom = 12.dp)
             )
         }
 
-        // Título que "corta" la línea superior
+        // Etiqueta desplazada verticalmente mediante Modifier.offset
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier
                 .padding(start = 10.dp)
-                .offset(y = (-8).dp) // Sube el texto justo a la altura de la línea
-                .background(MaterialTheme.colorScheme.surface) // Fondo igual al de su contenedor para tapar la línea
-                .padding(horizontal = 4.dp) // Pequeño respiro a los lados del texto
+                .offset(y = (-8).dp) // Desplazamiento clave para el efecto visual
+                .background(MaterialTheme.colorScheme.surface) // Oculta la línea subyacente
+                .padding(horizontal = 4.dp)
         )
     }
 }
 
+/**
+ * @brief Contenedor horizontal auto-desplazable para evitar desbordamientos de texto.
+ * @details Asegura que en pantallas de baja resolución las píldoras de estado se puedan explorar
+ *          deslizando el dedo, mejorando la UX.
+ */
 @Composable
 private fun ScrollableRowSeguro(content: @Composable () -> Unit) {
     Row(

@@ -1,3 +1,15 @@
+/**
+ * @file StreamScreen.kt
+ * @brief Visor de vídeo en tiempo real y configuración de cámara.
+ * @details Proporciona una interfaz para seleccionar un tópico de imagen de ROS 2,
+ *          configurar la resolución del streaming y renderizar la transmisión en vivo.
+ *          Implementa interoperabilidad con vistas nativas de Android (WebView) para
+ *          decodificar el flujo de vídeo de forma eficiente, y gestiona de manera estricta
+ *          el ciclo de vida para evitar congestiones en la red cuando la vista se destruye.
+ * @author Enrique Gómez
+ * @date 2026
+ */
+
 package com.enrique.tiago_app.ui.screens
 
 import android.annotation.SuppressLint
@@ -17,19 +29,31 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 
-// IMPORTS
+// --- IMPORTS DE LÓGICA DE NEGOCIO ---
 import com.enrique.tiago_app.ui.logic.StreamViewModel
 import com.enrique.tiago_app.utils.AppConstants
 
+/**
+ * @brief Componente principal de visualización de cámaras del robot.
+ * @details Posee dos estados visuales principales: "Formulario" (cuando el stream
+ *          está apagado y se requiere configuración) y "Visor" (cuando el stream
+ *          está activo y se renderiza el WebView).
+ *
+ * @param streamViewModel ViewModel encargado de gestionar las peticiones al backend para iniciar/detener el flujo de vídeo.
+ * @param cameraTopics Lista inmutable de tópicos de imagen descubiertos dinámicamente en el hardware del robot.
+ * @param isCompact Bandera booleana que adapta la densidad de la interfaz cuando se renderiza en modo pantalla dividida (Split-Screen).
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun StreamView(
     streamViewModel: StreamViewModel,
-    cameraTopics: List<String>, // ¡NUEVO! Recibimos la lista de cámaras detectadas
+    cameraTopics: List<String>,
     isCompact: Boolean = false
 ) {
-    // 1. Observamos los estados
+    // ========================================================================
+    // 1. OBSERVADORES DE ESTADO
+    // ========================================================================
     val monitorState by streamViewModel.monitorState.collectAsState()
     val streamUrl by streamViewModel.streamUrl.collectAsState()
 
@@ -37,42 +61,52 @@ fun StreamView(
     val currentTopic by streamViewModel.currentTopic.collectAsState()
     val currentQuality by streamViewModel.currentQuality.collectAsState()
 
-    // 2. Variables de UI
+    // ========================================================================
+    // 2. VARIABLES DE UI COMPUTADAS
+    // ========================================================================
     val isLoading = monitorState.startsWith("ESPERANDO_")
     val isStreaming = monitorState == AppConstants.MonitorState.RECIBIENDO_STREAM && streamUrl != null
 
-    // 3. Variables para controlar si los menús están abiertos o cerrados
-    var topicMenuExpanded by remember { mutableStateOf(false) } // ¡NUEVO! Para el topic
+    // Variables de estado local para el control de la expansión de los desplegables
+    var topicMenuExpanded by remember { mutableStateOf(false) }
     var qualityMenuExpanded by remember { mutableStateOf(false) }
 
-    // Opciones de los menús
+    // Diccionario de mapeo entre la interfaz de usuario y las constantes del backend
     val qualityOptions = mapOf(
         "Alta" to AppConstants.CameraQuality.HIGH,
         "Media" to AppConstants.CameraQuality.MEDIUM,
         "Baja" to AppConstants.CameraQuality.LOW
     )
 
-    // El recurso siempre es "camera" (ya no hay selector). Lo fijamos por si acaso.
+    // ========================================================================
+    // 3. EFECTOS DE CICLO DE VIDA
+    // ========================================================================
+
+    // Inicialización de seguridad: El recurso siempre debe apuntar a la cámara.
     LaunchedEffect(Unit) {
-        if (currentResource.isBlank()) streamViewModel.updateResource("camera")
+        if (currentResource.isBlank()) streamViewModel.updateResource("CAMERA")
     }
 
-    // ¡MAGIA! Auto-selección de la cámara principal por defecto
+    // Autocompletado inteligente: Si se detectan cámaras en la red, se preselecciona
+    // la primera automáticamente para agilizar el flujo de trabajo del usuario.
     LaunchedEffect(cameraTopics) {
         if (currentTopic.isBlank() && cameraTopics.isNotEmpty()) {
             streamViewModel.updateTopic(cameraTopics.first())
         }
     }
 
-    // ==========================================
-    // ¡NUEVO! APAGADO AUTOMÁTICO AL SALIR
-    // ==========================================
+    // Prevención de cuellos de botella de red: Cuando la pantalla desaparece
+    // (el Composable se destruye), se emite inmediatamente una señal al backend
+    // para detener la suscripción al tópico de vídeo.
     DisposableEffect(Unit) {
         onDispose {
             streamViewModel.onScreenDisposed()
         }
     }
 
+    // ========================================================================
+    // 4. ESTRUCTURA DE RENDERIZADO
+    // ========================================================================
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -80,16 +114,16 @@ fun StreamView(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         if (!isStreaming) {
-            // ==========================================
+            // ------------------------------------------------------------------------
             // MODO FORMULARIO (Sensor Apagado)
-            // ==========================================
+            // ------------------------------------------------------------------------
             Text(
                 text = "Configuración de la Cámara",
                 style = if (isCompact) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineMedium
             )
             Spacer(modifier = Modifier.height(if (isCompact) 8.dp else 24.dp))
 
-            // --- ¡NUEVO! DESPLEGABLE: TOPIC DE LA CÁMARA ---
+            // --- DESPLEGABLE: TOPIC DE LA CÁMARA ---
             ExposedDropdownMenuBox(
                 expanded = topicMenuExpanded,
                 onExpandedChange = {
@@ -124,7 +158,7 @@ fun StreamView(
 
             Spacer(modifier = Modifier.height(if (isCompact) 4.dp else 12.dp))
 
-            // --- DESPLEGABLE: CALIDAD ---
+            // --- DESPLEGABLE: CALIDAD DE TRANSMISIÓN ---
             ExposedDropdownMenuBox(
                 expanded = qualityMenuExpanded,
                 onExpandedChange = { if (!isLoading) qualityMenuExpanded = it }
@@ -158,7 +192,7 @@ fun StreamView(
 
             Spacer(modifier = Modifier.height(if (isCompact) 8.dp else 32.dp))
 
-            // --- BOTÓN INICIAR Y VALIDACIÓN ---
+            // --- BOTÓN INICIAR Y VALIDACIÓN DEFENSIVA ---
             Button(
                 onClick = {
                     if (currentResource.isBlank() || currentTopic.isBlank() || currentQuality.isBlank()) {
@@ -167,7 +201,8 @@ fun StreamView(
                         streamViewModel.toggleStream()
                     }
                 },
-                enabled = !isLoading && cameraTopics.isNotEmpty(), // ¡Seguridad extra! No deja pulsar si no hay cámara
+                // Seguridad extra: No deja pulsar si no hay cámara
+                enabled = !isLoading && cameraTopics.isNotEmpty(),
                 modifier = Modifier.fillMaxWidth().height(if (isCompact) 45.dp else 50.dp)
             ) {
                 if (isLoading) {
@@ -181,9 +216,9 @@ fun StreamView(
             }
 
         } else {
-            // ==========================================
+            // ------------------------------------------------------------------------
             // MODO VISUALIZACIÓN (Sensor Encendido)
-            // ==========================================
+            // ------------------------------------------------------------------------
             val qualityLabel = qualityOptions.entries.find { it.value == currentQuality }?.key ?: "Media"
 
             Surface(
@@ -191,11 +226,12 @@ fun StreamView(
                     .weight(1f)
                     .fillMaxWidth(),
                 shape = MaterialTheme.shapes.large,
-                color = Color(0xFF14171C),   // negro/gris muy oscuro tipo visor
+                color = Color(0xFF14171C),
                 border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
             ) {
                 Box(Modifier.fillMaxSize()) {
-                    // El vídeo, recortado a las esquinas de la tarjeta
+
+                    // --- NÚCLEO NATIVO DE ANDROID: WebView Interop ---
                     if (streamUrl != null) {
                         AndroidView(
                             factory = { context ->
@@ -210,6 +246,7 @@ fun StreamView(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .clip(MaterialTheme.shapes.large),
+                            // Previene Memory Leaks limpiando el recurso de Android nativo al destruirse el Composable
                             onRelease = { webView -> webView.destroy() }
                         )
                     } else {
@@ -220,7 +257,7 @@ fun StreamView(
                         )
                     }
 
-                    // --- Etiqueta LIVE (arriba izquierda) ---
+                    // --- Etiqueta Semántica OSD (On-Screen Display): LIVE ---
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
@@ -245,7 +282,7 @@ fun StreamView(
                         )
                     }
 
-                    // --- Franja inferior: topic · calidad ---
+                    // --- Información del origen de datos en el visor ---
                     Text(
                         text = "$currentTopic · $qualityLabel",
                         color = if (isCompact) Color.White else Color.DarkGray.copy(alpha = 0.75f),
@@ -255,7 +292,7 @@ fun StreamView(
                             .padding(12.dp)
                     )
 
-                    // --- Botón STOP compacto superpuesto (solo en pantalla dividida) ---
+                    // --- MODO MULTITAREA: Botón superpuesto al visor ---
                     if (isCompact) {
                         FilledIconButton(
                             onClick = { streamViewModel.toggleStream() },
@@ -283,8 +320,7 @@ fun StreamView(
                 }
             }
 
-            // En modo dividido (compacto) el stop va superpuesto sobre el vídeo,
-            // así que el botón grande de abajo solo se muestra a pantalla completa.
+            // --- MODO PANTALLA COMPLETA: Botón estándar en la parte inferior ---
             if (!isCompact) {
                 Spacer(modifier = Modifier.height(16.dp))
 

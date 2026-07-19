@@ -1,3 +1,12 @@
+/**
+ * @file MainActivity.kt
+ * @brief Punto de entrada principal de la aplicación Android.
+ * @details Orquesta la inyección de dependencias manual, la configuración del tema visual
+ *          y la navegación reactiva de Jetpack Compose basada en la máquina de estados.
+ * @author Enrique Gómez
+ * @date 2026
+ */
+
 package com.enrique.tiago_app
 
 import android.os.Bundle
@@ -18,20 +27,19 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 
-// --- IMPORTS DEL TEMA AXON (¡NUEVO!) ---
-import com.enrique.tiago_app.ui.theme.AxonTheme
-import com.enrique.tiago_app.ui.theme.DarkBg
+// --- IMPORTS DEL TEMA ---
+import com.enrique.tiago_app.ui.theme.R2PilotTheme
 import com.enrique.tiago_app.ui.theme.LightBg
 
-// --- IMPORTS DE TU ARQUITECTURA (PROTOCOL) ---
+// --- IMPORTS DE LA ARQUITECTURA (PROTOCOL) ---
 import com.enrique.tiago_app.protocol.MessageCodec
-import com.enrique.tiago_app.logic.ProtocolDirector
-import com.enrique.tiago_app.logic.ProtocolStateManager
-import com.enrique.tiago_app.communication.SessionManager
+import com.enrique.tiago_app.core.ProtocolDirector
+import com.enrique.tiago_app.core.ProtocolStateManager
 import com.enrique.tiago_app.communication.WebSocketClient
+import com.enrique.tiago_app.communication.SessionManager
 import com.enrique.tiago_app.utils.AppConstants
 
-// --- IMPORTS DE TUS VIEWMODELS ---
+// --- IMPORTS DE VIEWMODELS ---
 import com.enrique.tiago_app.ui.logic.MainViewModel
 import com.enrique.tiago_app.ui.logic.LobbyViewModel
 import com.enrique.tiago_app.ui.logic.ControlViewModel
@@ -41,17 +49,29 @@ import com.enrique.tiago_app.ui.logic.InvestigationViewModel
 import com.enrique.tiago_app.ui.logic.JointControlViewModel
 import com.enrique.tiago_app.ui.logic.SensorViewModel
 
-// --- IMPORTS DE TUS PANTALLAS (SCREENS) ---
+// --- IMPORTS DE PANTALLAS (SCREENS) ---
 import com.enrique.tiago_app.ui.screens.SplashScreen
 import com.enrique.tiago_app.ui.screens.WebsocketScreen
 import com.enrique.tiago_app.ui.screens.LobbyScreen
 import com.enrique.tiago_app.ui.screens.MainScreen
 
+// ========================================================================
+// 1. CAJA FUERTE DE DEPENDENCIAS (MANUAL DI CONTAINER)
+// ========================================================================
+
 /**
- * 1. CAJA FUERTE DE DEPENDENCIAS
- * Mantiene la conexión viva y compartida entre todos los ViewModels.
+ * @object AppDependencies
+ * @brief Contenedor Singleton para la inyección manual de dependencias (DI).
+ * @details Garantiza que los componentes críticos de la capa de red y protocolo mantengan
+ *          una única instancia viva durante todo el ciclo de vida de la aplicación,
+ *          sobreviviendo a la rotación de pantalla o la recreación de la MainActivity.
  */
 object AppDependencies {
+
+    /**
+     * @property appScope CoroutineScope global para tareas de red en segundo plano.
+     * Utiliza un SupervisorJob para que el fallo de una corrutina no cancele las demás.
+     */
     private val appScope = kotlinx.coroutines.CoroutineScope(
         kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.SupervisorJob()
     )
@@ -61,6 +81,7 @@ object AppDependencies {
     val stateManager = ProtocolStateManager()
     val sessionManager = SessionManager()
 
+    // El Director unifica todas las piezas anteriores
     val director = ProtocolDirector(
         scope = appScope,
         webSocketClient = webSocketClient,
@@ -70,18 +91,23 @@ object AppDependencies {
     )
 }
 
+// ========================================================================
+// 2. ACTIVIDAD PRINCIPAL (ENTRY POINT)
+// ========================================================================
+
 /**
- * 2. ACTIVIDAD PRINCIPAL
+ * @class MainActivity
+ * @brief Actividad raíz de la jerarquía de vistas de Android.
  */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            // ¡MAGIA! Envolvemos la app en el nuevo tema oscuro y premium
-            AxonTheme(darkTheme = false) {
+            // Envolvemos la app en el sistema de diseño personalizado
+            R2PilotTheme(darkTheme = false) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = LightBg // Usamos el fondo obsidiana del nuevo tema
+                    color = LightBg
                 ) {
                     AppNavigation()
                 }
@@ -90,61 +116,56 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+// ========================================================================
+// 3. ORQUESTADOR DE NAVEGACIÓN Y VIEWMODELS
+// ========================================================================
+
 /**
- * 3. ORQUESTADOR DE NAVEGACIÓN
+ * @brief Construye el grafo de navegación (NavHost) y gestiona los saltos de pantalla.
+ * @details Implementa un paradigma de "Navegación Reactiva": la UI no fuerza los saltos
+ *          de pantalla, sino que observa (collectAsState) la máquina de estados global
+ *          y reacciona automáticamente cuando el servidor aprueba una conexión o desconexión.
  */
 @Composable
 fun AppNavigation() {
     val navController = rememberNavController()
 
-    // Instanciamos los dos cerebros pasándoles el mismo Director
-    val mainViewModel: MainViewModel = viewModel {
-        MainViewModel(AppDependencies.director)
-    }
-    val lobbyViewModel: LobbyViewModel = viewModel {
-        LobbyViewModel(AppDependencies.director)
-    }
-    val controlViewModel: ControlViewModel = viewModel {
-        ControlViewModel(AppDependencies.director)
-    }
-    val streamViewModel: StreamViewModel = viewModel {
-        StreamViewModel(AppDependencies.director)
-    }
-    val playMotionViewModel: PlayMotionViewModel = viewModel {
-        PlayMotionViewModel(AppDependencies.director)
-    }
-    val investigationViewModel: InvestigationViewModel = viewModel {
-        InvestigationViewModel(AppDependencies.director)
-    }
-    val jointControlViewModel: JointControlViewModel = viewModel {
-        JointControlViewModel(AppDependencies.director)
-    }
-    val sensorViewModel: SensorViewModel = viewModel {
-        SensorViewModel(AppDependencies.director)
-    }
+    // --- 3.1 INYECCIÓN DE DEPENDENCIAS EN VIEWMODELS ---
+    // Todos los ViewModels reciben exactamente la misma instancia del ProtocolDirector
+    val mainViewModel: MainViewModel = viewModel { MainViewModel(AppDependencies.director) }
+    val lobbyViewModel: LobbyViewModel = viewModel { LobbyViewModel(AppDependencies.director) }
+    val controlViewModel: ControlViewModel = viewModel { ControlViewModel(AppDependencies.director) }
+    val streamViewModel: StreamViewModel = viewModel { StreamViewModel(AppDependencies.director) }
+    val playMotionViewModel: PlayMotionViewModel = viewModel { PlayMotionViewModel(AppDependencies.director) }
+    val investigationViewModel: InvestigationViewModel = viewModel { InvestigationViewModel(AppDependencies.director) }
+    val jointControlViewModel: JointControlViewModel = viewModel { JointControlViewModel(AppDependencies.director) }
+    val sensorViewModel: SensorViewModel = viewModel { SensorViewModel(AppDependencies.director) }
 
+    // --- 3.2 OBSERVADORES DE ESTADO GLOBAL ---
     val globalState by mainViewModel.globalState.collectAsState()
     val systemAlert by mainViewModel.systemAlert.collectAsState()
 
-    // Lógica de navegación reactiva
+    // --- 3.3 LÓGICA DE NAVEGACIÓN REACTIVA ---
     LaunchedEffect(globalState) {
         val currentRoute = navController.currentDestination?.route
 
-        // Mientras se muestra el splash, no redirigimos: dejamos que la
-        // animación termine y sea ella quien navegue a "login".
+        // Excepción de diseño: Permitir que el SplashScreen termine su animación antes de redirigir
         if (currentRoute == "splash") return@LaunchedEffect
 
         when (globalState) {
+            // Estado desconectado: Forzar retorno a la pantalla de Login
             AppConstants.GlobalState.IDLE -> {
                 if (currentRoute != "login") {
-                    navController.navigate("login") { popUpTo(0) }
+                    navController.navigate("login") { popUpTo(0) } // popUpTo(0) purga el historial de retroceso
                 }
             }
+            // Estado intermedio: Navegar a la Sala de Espera (Host conectado, pero ROS 2 no enlazado)
             AppConstants.GlobalState.CONEXION_BACKEND -> {
                 if (currentRoute != "conexion") {
                     navController.navigate("conexion") { popUpTo(0) }
                 }
             }
+            // Estado operativo: Acceso total a los mandos del robot
             AppConstants.GlobalState.SESION_INICIADA -> {
                 if (currentRoute != "menu principal") {
                     navController.navigate("menu principal") { popUpTo(0) }
@@ -153,7 +174,8 @@ fun AppNavigation() {
         }
     }
 
-    // Lógica Visual del Dialogo de Alerta
+    // --- 3.4 SISTEMA DE ALERTAS GLOBALES ---
+    // Este cuadro de diálogo puede sobreponerse en cualquier pantalla si la máquina de estados lo requiere.
     if (systemAlert != null) {
         AlertDialog(
             onDismissRequest = { mainViewModel.clearAlert() },
@@ -167,7 +189,7 @@ fun AppNavigation() {
         )
     }
 
-    // MAPA DE RUTAS OFICIAL
+    // --- 3.5 MAPA DE RUTAS ---
     NavHost(
         navController = navController,
         startDestination = "splash"
@@ -176,13 +198,16 @@ fun AppNavigation() {
             SplashScreen(
                 onAnimationFinished = {
                     navController.navigate("login") {
-                        popUpTo("splash") { inclusive = true } // el splash no vuelve con "atrás"
+                        popUpTo("splash") { inclusive = true }
                     }
                 }
             )
         }
+
         composable("login") { WebsocketScreen(viewModel = mainViewModel) }
+
         composable("conexion") { LobbyScreen(viewModel = lobbyViewModel) }
+
         composable("menu principal") {
             MainScreen(
                 controlViewModel = controlViewModel,

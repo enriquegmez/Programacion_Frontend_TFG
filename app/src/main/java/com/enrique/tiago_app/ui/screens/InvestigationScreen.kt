@@ -1,3 +1,13 @@
+/**
+ * @file InvestigationScreen.kt
+ * @brief Pantalla de exploración del grafo de ROS 2.
+ * @details Proporciona una interfaz para descubrir y filtrar dinámicamente los recursos
+ *          (Topics, Services, Actions) expuestos por el robot. Implementa un motor
+ *          de búsqueda local y reciclaje de vistas para manejar grandes volúmenes de datos.
+ * @author Enrique Gómez
+ * @date 2026
+ */
+
 package com.enrique.tiago_app.ui.screens
 
 import androidx.compose.foundation.layout.*
@@ -15,16 +25,25 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-// Importamos tu ViewModel y Constantes
+// --- IMPORTS DE LA LÓGICA Y CONSTANTES ---
 import com.enrique.tiago_app.ui.logic.InvestigationViewModel
 import com.enrique.tiago_app.ui.theme.MonoData
 import com.enrique.tiago_app.ui.theme.MonoLabel
 import com.enrique.tiago_app.utils.AppConstants
 
+/**
+ * @brief Renderiza la vista del explorador de red ROS 2.
+ * @details Coordina la interacción entre la selección de categorías, la solicitud de escaneo
+ *          a la red y el filtrado reactivo de los resultados.
+ * @param viewModel Instancia de [InvestigationViewModel] que expone los flujos de datos
+ *                  filtrados y gestiona las peticiones de descubrimiento al backend.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun InvestigationScreen(viewModel: InvestigationViewModel) {
-    // 1. Observamos los estados del ViewModel
+    // ========================================================================
+    // OBSERVADORES DE ESTADO (Flujo Unidireccional de Datos - UDF)
+    // ========================================================================
     val selectedResource by viewModel.selectedResource.collectAsState()
     val searchText by viewModel.searchText.collectAsState()
     val filteredList by viewModel.filteredList.collectAsState()
@@ -36,8 +55,10 @@ fun InvestigationScreen(viewModel: InvestigationViewModel) {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // --- SECCIÓN 1: PESTAÑAS DE SELECCIÓN ---
-        // Usamos una fila de botones tipo "Chip" para elegir qué queremos ver
+        // ========================================================================
+        // 1. SELECTOR DE CATEGORÍA
+        // ========================================================================
+        // Permite al usuario conmutar entre los tres pilares de comunicación de ROS 2.
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceEvenly
@@ -59,12 +80,16 @@ fun InvestigationScreen(viewModel: InvestigationViewModel) {
             )
         }
 
-        // --- SECCIÓN 2: BOTÓN DE PETICIÓN ---
+        // ========================================================================
+        // 2. DISPARADOR DE RED
+        // ========================================================================
+        // El botón se bloquea automáticamente (enabled = !isLoading) y muestra feedback visual
+        // durante las peticiones para evitar que el usuario lance peticiones superpuestas
+        // que puedan colapsar el puente WebSocket o el nodo puente.
         Button(
             onClick = { viewModel.fetchNetworkInfo() },
             modifier = Modifier.fillMaxWidth().height(52.dp),
             shape = MaterialTheme.shapes.small,
-            // Bloqueamos el botón si ya estamos cargando datos
             enabled = !isLoading
         ) {
             if (isLoading) {
@@ -78,7 +103,7 @@ fun InvestigationScreen(viewModel: InvestigationViewModel) {
             } else {
                 Icon(Icons.Default.Refresh, contentDescription = "Listar", tint = Color.White)
                 Spacer(modifier = Modifier.width(8.dp))
-                // El texto del botón cambia dinámicamente según lo seleccionado
+                // Generación dinámica del texto según el contexto actual
                 Text(
                     "Listar ${selectedResource.replaceFirstChar { it.uppercase() }}",
                     color = Color.White,
@@ -87,7 +112,11 @@ fun InvestigationScreen(viewModel: InvestigationViewModel) {
             }
         }
 
-        // --- SECCIÓN 3: BARRA DE BÚSQUEDA ---
+        // ========================================================================
+        // 3. BARRA DE BÚSQUEDA REACTIVA (Buscador Local)
+        // ========================================================================
+        // Realiza filtrado en caliente sobre la lista alojada en memoria.
+        // Se desactiva inteligentemente si no hay datos base para buscar.
         OutlinedTextField(
             value = searchText,
             onValueChange = { viewModel.updateSearchText(it) },
@@ -118,14 +147,15 @@ fun InvestigationScreen(viewModel: InvestigationViewModel) {
                 unfocusedContainerColor = MaterialTheme.colorScheme.surface,
                 focusedContainerColor = MaterialTheme.colorScheme.surface,
             ),
-            // Habilitamos la barra solo si hay datos en la lista para buscar
             enabled = filteredList.isNotEmpty() || searchText.isNotEmpty()
         )
 
-        // --- SECCIÓN 4: LISTA DE RESULTADOS ---
+        // ========================================================================
+        // 4. LISTA DE RESULTADOS
+        // ========================================================================
         Box(modifier = Modifier.fillMaxSize()) {
             if (filteredList.isEmpty()) {
-                // Mensaje cuando la lista está vacía
+                // Manejo de estado vacío para orientar al usuario
                 Text(
                     text = if (searchText.isNotBlank()) "No hay coincidencias para '$searchText'"
                     else "Pulsa 'Listar' para obtener los datos actuales del robot.",
@@ -134,7 +164,8 @@ fun InvestigationScreen(viewModel: InvestigationViewModel) {
                     modifier = Modifier.align(Alignment.Center)
                 )
             } else {
-                // Renderizado eficiente de la lista usando LazyColumn
+                // Empleo de LazyColumn: Solo instancia en RAM las tarjetas visibles en pantalla,
+                // logrando mantener 60 FPS estables incluso si ROS devuelve +5000 tópicos.
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -149,10 +180,17 @@ fun InvestigationScreen(viewModel: InvestigationViewModel) {
     }
 }
 
-// Componente visual independiente para cada fila de la lista
+/**
+ * @brief Componente visual independiente para presentar un nodo/tópico de ROS.
+ * @details Muestra la firma de la interfaz (Nombre y Tipos de Mensajes asociados)
+ *          con un estilo monoespaciado tipo terminal para facilitar la lectura técnica.
+ * @param name Ruta del recurso en el grafo de ROS (ej. "/cmd_vel").
+ * @param types Lista de tipos de mensaje soportados (ej. ["geometry_msgs/msg/Twist"]).
+ */
 @Composable
 fun RosNodeCard(name: String, types: List<String>) {
     val cs = MaterialTheme.colorScheme
+
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
@@ -160,7 +198,7 @@ fun RosNodeCard(name: String, types: List<String>) {
         border = androidx.compose.foundation.BorderStroke(1.dp, cs.outline)
     ) {
         Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
-            // Nombre del Topic/Service/Action en monoespaciada negrita
+            // Identificador principal
             Text(
                 text = name,
                 style = MonoData.copy(fontSize = 15.sp),
@@ -168,7 +206,7 @@ fun RosNodeCard(name: String, types: List<String>) {
             )
             Spacer(modifier = Modifier.height(6.dp))
 
-            // Tipos: "Tipo:" en gris + valor en cian, todo monoespaciado
+            // Iteración de los tipos de datos soportados por el tópico/servicio
             types.forEach { type ->
                 Row {
                     Text(

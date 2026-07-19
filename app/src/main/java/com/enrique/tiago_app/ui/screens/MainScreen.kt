@@ -1,3 +1,13 @@
+/**
+ * @file MainScreen.kt
+ * @brief Orquestador principal de la interfaz gráfica.
+ * @details Gestiona el enrutamiento entre los distintos módulos de la aplicación,
+ *          la adaptación condicional de la interfaz según el hardware detectado,
+ *          y el sistema multitarea de pantalla dividida para operaciones simultáneas.
+ * @author Enrique Gómez
+ * @date 2026
+ */
+
 package com.enrique.tiago_app.ui.screens
 
 import androidx.compose.foundation.background
@@ -10,10 +20,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
-// Tus ViewModels y utilidades
+// --- IMPORTS DE LA LÓGICA DE NEGOCIO ---
 import com.enrique.tiago_app.ui.logic.ControlViewModel
 import com.enrique.tiago_app.ui.logic.MainViewModel
 import com.enrique.tiago_app.ui.logic.StreamViewModel
@@ -24,12 +33,26 @@ import com.enrique.tiago_app.ui.logic.JointControlViewModel
 import com.enrique.tiago_app.ui.logic.SensorViewModel
 import com.enrique.tiago_app.utils.AppConstants
 
-// Componentes AXON (Asegúrate de que la ruta del paquete de los componentes sea correcta en tu proyecto)
-import com.enrique.tiago_app.ui.components.AxonBottomBar
+// --- IMPORTS DE COMPONENTES VISUALES ---
+import com.enrique.tiago_app.ui.components.BottomBar
 import com.enrique.tiago_app.ui.components.ScreenHeader
 import com.enrique.tiago_app.ui.components.SplitSegmentedControl
 import com.enrique.tiago_app.ui.components.SplitSourcePicker
 
+/**
+ * @brief Componente raíz que aloja el marco estructural de la app tras la conexión.
+ * @details Recibe todos los ViewModels del sistema y los inyecta en sus respectivas vistas
+ *          hijas. Implementa el patrón "State Hoisting" centralizando el estado de navegación
+ *          y la distribución de capas (Z-Index) para menús flotantes.
+ *
+ * @param mainViewModel Gestión global de la app, estado de red y capacidades de hardware del robot.
+ * @param controlViewModel Lógica de teleoperación (joystick y envío de comandos de velocidad).
+ * @param streamViewModel Gestión de la recepción, decodificación y renderizado de vídeo ROS 2.
+ * @param playMotionViewModel Lógica para la ejecución de macros y movimientos pregrabados.
+ * @param investigationViewModel Herramientas de análisis de datos y telemetría avanzada.
+ * @param jointControlViewModel Control cinemático directo de articulaciones individuales.
+ * @param sensorViewModel Lectura y visualización de telemetría de sensores en tiempo real.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
@@ -41,36 +64,38 @@ fun MainScreen(
     jointControlViewModel: JointControlViewModel,
     sensorViewModel: SensorViewModel
 ) {
-    // Observamos en qué pantalla estamos
+    // ========================================================================
+    // 1. OBSERVADORES DE NAVEGACIÓN Y CAPACIDADES
+    // ========================================================================
     val currentScreen by mainViewModel.currentScreen.collectAsState()
 
-    // Lista de pantallas que admiten la división
+    // Rutas operativas que soportan el modo multitarea (Split-Screen)
     val splitAllowedScreens = listOf(AppScreen.TELEOP, AppScreen.PLAY_MOTION, AppScreen.ARTICULACIONES)
 
-    // Estados locales para controlar la pantalla dividida
+    // Estados de control de la pantalla dividida
     var isSplitScreen by remember { mutableStateOf(false) }
     var topScreenSelection by remember { mutableStateOf(AppScreen.CAMERA) }
-    // Selector flotante Cámara/Sensores que aparece al pulsar "Dividida".
     var showSourcePicker by remember { mutableStateOf(false) }
 
+    // Estado del hardware para adaptar la UI
     val movState by controlViewModel.movementState.collectAsState()
     val isTeleopActive = (movState == AppConstants.MovementState.ENVIANDO_INFO)
-
     val robotData by mainViewModel.robotCapabilities.collectAsState()
+
     val hasCameras = robotData?.capabilities?.cameras?.isNotEmpty() == true
     val hasBase = robotData?.capabilities?.hasBase == true
     val hasPlayMotion = robotData?.capabilities?.hasPlayMotion == true
-    // Articulaciones controlables (mismo campo que usabas en el menú lateral antiguo)
     val hasJoints = robotData?.capabilities?.controlableJoints?.isNotEmpty() == true
-    // Sensores: se descubren aparte (no vienen en capabilities). Si el ViewModel
-    // expone la lista, la usamos; si no, dejamos Sensores siempre habilitado.
     val hasSensors = true // TODO: enlazar con availableSensors cuando se exponga en MainViewModel
 
-    // Rutas habilitadas según el hardware detectado. Las que no estén aquí
-    // aparecen en gris y no se puede navegar a ellas (ni en modo dividido).
+    // ========================================================================
+    // 2. ENRUTAMIENTO CONDICIONAL (Hardware-Agnostic UI)
+    // ========================================================================
+    // Construcción dinámica de accesos: Si el robot no reporta una capacidad,
+    // la ruta queda inhabilitada por defecto para prevenir pantallas vacías o errores.
     val enabledRoutes: Set<String> = buildSet {
-        add("dashboard")                 // siempre
-        add("invest")                    // análisis: siempre
+        add("dashboard")
+        add("invest")
         if (hasSensors) add("sensors")
         if (hasJoints) add("joints")
         if (hasBase) add("teleop")
@@ -78,11 +103,14 @@ fun MainScreen(
         if (hasPlayMotion) add("motion")
     }
 
-    // Estado del velo blanco a pantalla completa cuando se abre un grupo del menú.
     var menuOpen by remember { mutableStateOf(false) }
-    var closeMenuSignal by remember { mutableStateOf(0) }
+    var closeMenuSignal by remember { mutableIntStateOf(0) }
 
-    // Reseteo total al cambiar de pestaña
+    // ========================================================================
+    // 3. LIMPIEZA DE ESTADO DE NAVEGACIÓN
+    // ========================================================================
+    // Resetea el estado de layout y por seguridad desactiva los motores si el
+    // usuario abandona la pantalla de teleoperación.
     LaunchedEffect(currentScreen) {
         isSplitScreen = false
         topScreenSelection = AppScreen.CAMERA
@@ -92,7 +120,7 @@ fun MainScreen(
         }
     }
 
-    // Texto de cabecera (eyebrow + título) por pantalla. La cabecera es común.
+    // Traducción semántica de la ruta actual a etiquetas legibles
     val (headerEyebrow, headerTitle) = when (currentScreen) {
         AppScreen.DASHBOARD -> "Resumen" to "Dashboard"
         AppScreen.TELEOP -> "Control" to "Teleoperación"
@@ -103,7 +131,6 @@ fun MainScreen(
         AppScreen.SENSORES -> "Datos" to "Sensores"
     }
 
-    // Adaptamos tu ENUM AppScreen a los String-Rutas del nuevo menú
     val currentRouteString = when (currentScreen) {
         AppScreen.DASHBOARD -> "dashboard"
         AppScreen.TELEOP -> "teleop"
@@ -114,9 +141,15 @@ fun MainScreen(
         AppScreen.SENSORES -> "sensors"
     }
 
-    // Función puente para navegar usando tu MainViewModel
-    fun navigateFromAxonMenu(route: String) {
-        // Defensa extra: si la ruta está deshabilitada por capacidades, ignorar.
+    /**
+     * @brief Traduce y enruta las peticiones de navegación desde el menú base.
+     * @details Actúa como pasarela de seguridad antes de cambiar
+     *          el estado global de la vista. Verifica que la ruta solicitada esté soportada
+     *          por el hardware detectado (lista [enabledRoutes]). Si no lo está, la ignora.
+     * @param route Cadena de texto representativa del destino elegido en la UI (ej. "teleop").
+     */
+    fun navigateFromMenu(route: String) {
+        // Lógica defensiva: Bloquea intentos de navegación a hardware inexistente
         if (route !in enabledRoutes) return
 
         val nextScreen = when (route) {
@@ -135,9 +168,9 @@ fun MainScreen(
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
             topBar = {
-                // ==========================================
-                // CABECERA COMÚN (RESUMEN / Título + batería)
-                // ==========================================
+                // ========================================================================
+                // 4. CABECERA GLOBAL Y GESTIÓN DE BATERÍA
+                // ========================================================================
                 val batteryPct = robotData?.status?.batteryPct
                 val isCharging = robotData?.status?.isCharging == true
 
@@ -154,7 +187,7 @@ fun MainScreen(
                         isCharging = isCharging
                     )
 
-                    // Controles de pantalla dividida (solo en pantallas que lo permiten)
+                    // Despliegue de controles de Split-Screen solo en rutas permitidas
                     val isSplitAllowed = currentScreen in splitAllowedScreens
                     if (isSplitAllowed) {
                         Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
@@ -162,22 +195,17 @@ fun MainScreen(
                                 split = isSplitScreen,
                                 onSplitChange = { split ->
                                     if (split) {
-                                        // Entrar en dividido: apagamos sensores que pudieran seguir
-                                        // activos y abrimos el selector flotante Cámara/Sensores.
                                         sensorViewModel.onScreenDisposed()
                                         isSplitScreen = true
-                                        // Si no hay cámara, el panel por defecto es sensores.
+                                        // Ajuste inteligente: si no hay cámara, salta directo a sensores
                                         if (!hasCameras) topScreenSelection = AppScreen.SENSORES
                                         showSourcePicker = true
                                     } else {
-                                        // Volver a pantalla completa: cerramos el selector.
                                         isSplitScreen = false
                                         showSourcePicker = false
                                     }
                                 }
                             )
-                            // El selector Cámara/Sensores ya no vive aquí fijo: aparece
-                            // flotante (más abajo) al pulsar "Dividida".
                         }
                     }
                 }
@@ -187,16 +215,15 @@ fun MainScreen(
                 modifier = Modifier
                     .padding(innerPadding)
                     .fillMaxSize()
-                    .padding(bottom = 96.dp)   // hueco para la barra flotante (que ya no está en el Scaffold)
+                    .padding(bottom = 96.dp)
             ) {
-
-                // ==========================================
-                // LÓGICA DE VISUALIZACIÓN DIVIDIDA (Intacta)
-                // ==========================================
+                // ========================================================================
+                // 5. MOTOR DE RENDERIZADO BIFURCADO (Split vs Full Screen)
+                // ========================================================================
                 if (isSplitScreen && currentScreen in splitAllowedScreens) {
                     Column(modifier = Modifier.fillMaxSize()) {
 
-                        // MITAD SUPERIOR: Cámara o Sensores
+                        // --- MITAD SUPERIOR: Conciencia Situacional (Visual o Sensorial) ---
                         Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                             if (topScreenSelection == AppScreen.CAMERA) {
                                 if (hasCameras) {
@@ -206,6 +233,7 @@ fun MainScreen(
                                         isCompact = true
                                     )
                                 } else {
+                                    // Empty State: Fallback visual si falla la detección hardware
                                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                         Icon(Icons.Default.Info, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(48.dp))
                                         Spacer(modifier = Modifier.height(8.dp))
@@ -217,9 +245,10 @@ fun MainScreen(
                             }
                         }
 
+                        // Divisor semántico entre Contexto y Acción
                         HorizontalDivider(thickness = 3.dp, color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
 
-                        // MITAD INFERIOR: La herramienta que estábamos usando
+                        // --- MITAD INFERIOR: Capa de Actuación ---
                         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                             when (currentScreen) {
                                 AppScreen.TELEOP -> JoystickView(controlViewModel = controlViewModel, teleopTopics = robotData?.capabilities?.teleopTopics ?: emptyList(), isCompact = true)
@@ -230,11 +259,9 @@ fun MainScreen(
                         }
                     }
                 } else {
-                    // ==========================================
-                    // MODO PANTALLA COMPLETA
-                    // ==========================================
+                    // --- MODO PANTALLA COMPLETA ---
                     when (currentScreen) {
-                        AppScreen.DASHBOARD -> DashboardView(mainViewModel)
+                        AppScreen.DASHBOARD -> DashboardScreen(mainViewModel)
                         AppScreen.TELEOP -> JoystickView(controlViewModel = controlViewModel, teleopTopics = robotData?.capabilities?.teleopTopics ?: emptyList())
                         AppScreen.CAMERA -> StreamView(streamViewModel = streamViewModel, cameraTopics = robotData?.capabilities?.cameraTopics ?: emptyList())
                         AppScreen.PLAY_MOTION -> PlayMotionScreen(viewModel = playMotionViewModel)
@@ -246,7 +273,11 @@ fun MainScreen(
             }
         }
 
-        // --- VELO BLANCO a PANTALLA COMPLETA cuando el menú está desplegado ---
+        // ========================================================================
+        // 6. CAPAS DE SEGURIDAD (Prevención de Toques Accidentales)
+        // ========================================================================
+
+        // Velo Blanco del Menú de Navegación
         androidx.compose.animation.AnimatedVisibility(
             visible = menuOpen,
             enter = androidx.compose.animation.fadeIn(),
@@ -256,6 +287,7 @@ fun MainScreen(
                 Modifier
                     .fillMaxSize()
                     .background(Color.White.copy(alpha = 0.85f))
+                    // Atrapa los clics fuera del menú para cerrarlo y evitar clics "fantasma" en el fondo
                     .clickable(
                         indication = null,
                         interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
@@ -263,27 +295,25 @@ fun MainScreen(
             )
         }
 
-        // --- BARRA FLOTANTE AXON (siempre por encima del velo del menú) ---
+        // Componente Menú Inferior Flotante
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .navigationBarsPadding(),
             contentAlignment = Alignment.BottomCenter
         ) {
-            AxonBottomBar(
+            BottomBar(
                 currentRoute = currentRouteString,
                 enabledRoutes = enabledRoutes,
-                onNavigate = { navigateFromAxonMenu(it) },
+                onNavigate = { navigateFromMenu(it) },
                 onDisconnect = { sensorViewModel.clearTrail(); mainViewModel.disconnectFromRobot() },
                 onOpenChange = { menuOpen = it },
                 closeSignal = closeMenuSignal
             )
         }
 
-        // --- SELECTOR FLOTANTE Cámara/Sensores (al pulsar "Dividida") ---
-        // Se dibuja el ÚLTIMO para que su velo blanco cubra también la barra
-        // inferior: mientras se elige la fuente, sólo se puede tocar el selector
-        // (o el propio velo para cerrar), no las opciones del menú.
+        // Velo Selector de Fuente (Split-Screen)
+        // Se dibuja el último en el árbol para asegurar la mayor jerarquía visual
         SplitSourcePicker(
             visible = showSourcePicker,
             cameraEnabled = hasCameras,

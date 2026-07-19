@@ -1,3 +1,12 @@
+/**
+ * @file InvestigationViewModel.kt
+ * @brief ViewModel para la herramienta de Análisis e Investigación de la red ROS 2.
+ * @details Implementa un motor de búsqueda y filtrado reactivo en memoria. Se encarga de solicitar
+ *          y formatear el grafo de tópicos, servicios y acciones expuestos por el robot.
+ * @author Enrique Gómez
+ * @date 2026
+ */
+
 package com.enrique.tiago_app.ui.logic
 
 import androidx.lifecycle.ViewModel
@@ -10,13 +19,16 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-// Importamos el Director y las Constantes
-import com.enrique.tiago_app.logic.ProtocolDirector
+// --- IMPORTS DE LA ARQUITECTURA ---
+import com.enrique.tiago_app.core.ProtocolDirector
 import com.enrique.tiago_app.utils.AppConstants
 
 /**
- * Modelo de datos simple para la vista de Investigación.
- * Representa una fila en la lista (ej: nombre del topic y sus tipos).
+ * @class RosNodeItem
+ * @brief Modelo de Presentación (UI Model) para las listas de investigación.
+ * @details Aísla la vista de las estructuras de datos puras del backend (Mapas).
+ * @param name Nombre de la interfaz de ROS 2 (ej: "/cmd_vel").
+ * @param types Lista de tipos de mensajes asociados (ej: ["geometry_msgs/msg/Twist"]).
  */
 data class RosNodeItem(
     val name: String,
@@ -24,37 +36,49 @@ data class RosNodeItem(
 )
 
 /**
- * InvestigationViewModel
- * Gestiona la lógica de la pantalla de debug/investigación de ROS 2.
+ * @class InvestigationViewModel
+ * @brief Orquesta las peticiones de topología de red a ROS 2 y su visualización filtrada.
+ * @param director Inyección de dependencia del núcleo de comunicaciones.
  */
 class InvestigationViewModel(
     private val director: ProtocolDirector
 ) : ViewModel() {
 
-    // ==========================================
+    // ========================================================================
     // 1. ESTADOS LOCALES DE LA INTERFAZ
-    // ==========================================
+    // ========================================================================
 
-    // Qué pestaña o filtro está seleccionado actualmente (Topics por defecto)
+    /** @brief Categoría actual seleccionada por el usuario (TOPICS, SERVICES, ACTIONS). */
     private val _selectedResource = MutableStateFlow(AppConstants.Resource.TOPICS)
     val selectedResource: StateFlow<String> = _selectedResource.asStateFlow()
 
-    // El texto que el usuario está escribiendo en la barra de búsqueda
+    /** @brief Cadena de texto actual introducida en la barra de búsqueda. */
     private val _searchText = MutableStateFlow("")
     val searchText: StateFlow<String> = _searchText.asStateFlow()
 
-    // ¡NUEVO! Variable exclusiva para controlar el "spinner" del botón de esta pantalla
+    /**
+     * @brief Controla de forma aislada el spinner de carga del botón "Listar".
+     * @details Evita bloquear toda la pantalla de forma global.
+     */
     private val _isLoadingLocal = MutableStateFlow(false)
     val isLoadingLocal: StateFlow<Boolean> = _isLoadingLocal.asStateFlow()
 
-    // Observamos el estado global para saber si estamos cargando (ESPERANDO_RECIBIR_INFORMACION_UNICA)
+    /**
+     * @brief Semáforo global del sistema.
+     * @details Informa de transiciones de alto nivel (como ESPERANDO_RECIBIR_INFORMACION_UNICA).
+     */
     val globalState: StateFlow<String> = director.stateManager.globalState
 
-    // ==========================================
-    // 2. EL MOTOR DE BÚSQUEDA REACTIVA (¡La Magia!)
-    // ==========================================
+    // ========================================================================
+    // 2. EL MOTOR DE BÚSQUEDA REACTIVA
+    // ========================================================================
 
-    // Combine junta los flujos y se recalcula automáticamente si CUALQUIERA de ellos cambia.
+    /**
+     * @brief Tubería de datos reactiva que combina 5 fuentes de información distintas.
+     * @details Si *cualquiera* de las fuentes cambia (ej. el usuario teclea una letra,
+     *          o llega un nuevo topic del backend), el bloque se re-ejecuta automáticamente.
+     *          La búsqueda se hace localmente (en caché), ahorrando ancho de banda.
+     */
     val filteredList: StateFlow<List<RosNodeItem>> = combine(
         _selectedResource,
         _searchText,
@@ -63,7 +87,7 @@ class InvestigationViewModel(
         director.rosActions
     ) { resource, search, topics, services, actions ->
 
-        // 1. Elegimos qué mapa mirar según la pestaña seleccionada
+        // 1. SELECCIÓN DE ORIGEN: ¿Qué mapa del Director debemos mirar?
         val sourceMap = when (resource) {
             AppConstants.Resource.TOPICS -> topics
             AppConstants.Resource.SERVICES -> services
@@ -71,76 +95,85 @@ class InvestigationViewModel(
             else -> emptyMap()
         }
 
-        // 2. Transformamos el mapa del backend (Map<String, List<String>>) a nuestra clase de UI
+        // 2. MAPEO A MODELO DE VISTA: Convertimos Map<String, List<String>> -> List<RosNodeItem>
         val itemList = sourceMap.map { entry ->
             RosNodeItem(name = entry.key, types = entry.value)
         }
 
-        // 3. Aplicamos el filtro de búsqueda
+        // 3. APLICACIÓN DEL FILTRO LOCAL
         if (search.isBlank()) {
-            itemList // Si no hay texto, devolvemos todo
+            // Si la barra está vacía, entregamos la lista completa
+            itemList
         } else {
             itemList.filter { item ->
-                // Buscamos tanto en el nombre del topic/servicio como en sus tipos (ignorando mayúsculas)
+                // Buscamos coincidencia parcial ignorando mayúsculas/minúsculas.
+                // Se busca tanto en el nombre del nodo como en sus tipos de mensaje.
                 item.name.contains(search, ignoreCase = true) ||
                         item.types.any { type -> type.contains(search, ignoreCase = true) }
             }
         }
     }.stateIn(
         scope = viewModelScope,
+        // WhileSubscribed(5000): Mantiene los datos en memoria 5 segundos tras perder el foco de la UI
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = emptyList()
     )
 
+    // ========================================================================
+    // 3. VIGILANTE DE ESTADOS (Sincronización con el Backend)
+    // ========================================================================
     init {
-        // ==========================================
-        // 3. VIGILANTE DE ESTADOS (Limpieza y Carga)
-        // ==========================================
         viewModelScope.launch {
             globalState.collect { state ->
-                // ¡NUEVO! Cuando el robot vuelve a su estado normal tras procesar la petición,
-                // apagamos el circulito de carga de nuestro botón.
+                // 1. Al volver a estado normal (SESION_INICIADA),
+                // apagamos la animación de carga del botón de petición.
                 if (state == AppConstants.GlobalState.SESION_INICIADA) {
                     _isLoadingLocal.value = false
                 }
 
-                // Si el robot se desconecta, limpiamos la barra de búsqueda y la memoria.
+                // 2. Si el robot se apaga o pierde señal,
+                // reseteamos por seguridad la vista para no mostrar datos obsoletos o fantasma.
                 if (state == AppConstants.GlobalState.IDLE || state == AppConstants.GlobalState.CONEXION_BACKEND) {
                     clearData()
                 }
             }
         }
     }
-    // ==========================================
-    // 4. ACCIONES DEL USUARIO
-    // ==========================================
+
+    // ========================================================================
+    // 4. EVENTOS DE INTERACCIÓN
+    // ========================================================================
 
     /**
-     * Se llama al pulsar las pestañas (Topics, Services, Actions).
-     * No hace la petición automáticamente, solo cambia el estado visual.
+     * @brief Cambia el recurso a investigar (Topics, Actions o Services).
+     * @details Es una operación puramente visual. Al cambiar de pestaña, se borra el término
+     *          de búsqueda activo para evitar resultados confusos.
+     * @param resource Constante desde AppConstants.Resource.
      */
     fun selectResource(resource: String) {
         _selectedResource.value = resource
-        _searchText.value = "" // Limpiamos la búsqueda al cambiar de pestaña por comodidad
+        _searchText.value = ""
     }
 
     /**
-     * Se llama al pulsar el botón "Listar ...".
-     * Lanza la petición al backend a través del Director.
+     * @brief Lanza la petición al backend para mostrar el grafo de red actual.
+     * @details Delega la llamada de red al `ProtocolDirector`.
      */
     fun fetchNetworkInfo() {
         director.requestNetworkInfo(_selectedResource.value)
     }
 
     /**
-     * Se llama cada vez que el usuario teclea una letra en el buscador.
+     * @brief Actualiza en tiempo real el término del buscador.
+     * @param text Nueva cadena de texto introducida por teclado.
      */
     fun updateSearchText(text: String) {
         _searchText.value = text
     }
 
     /**
-     * Limpieza manual (se ejecuta también automáticamente al desconectar).
+     * @brief Eliminación interna manual de la información en pantalla.
+     * @details Vacía tanto el texto de búsqueda como la caché temporal en el Director.
      */
     private fun clearData() {
         _searchText.value = ""

@@ -1,3 +1,12 @@
+/**
+ * @file SharedComponents.kt
+ * @brief Sistema de Diseño de la aplicación.
+ * @details Este archivo agrupa componentes visuales genéricos. Garantizan consistencia visual y
+ *          reutilización en todas las pantallas.
+ * @author Enrique Gómez
+ * @date 2026
+ */
+
 package com.enrique.tiago_app.ui.components
 
 import androidx.compose.foundation.BorderStroke
@@ -5,8 +14,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Cancel
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -29,12 +36,14 @@ import com.enrique.tiago_app.ui.theme.MonoData
 import com.enrique.tiago_app.ui.theme.MonoLabel
 
 /* ============================================================================
- *  COMPONENTES COMPARTIDOS  ·  "kit" visual del rediseño AXON
- *  Piezas reutilizables para que todas las pantallas hablen el mismo idioma.
- *  Ninguna contiene lógica de negocio.
+ *  1. COMPONENTES ESTRUCTURALES Y BOTONES
  * ========================================================================== */
 
-/** Tarjeta "premium": superficie elevada por tono + borde sutil + esquinas 18 dp. */
+/**
+ * @brief Contenedor para agrupar información.
+ * @details Utiliza una elevación tonal sutil, bordes suaves y color SurfaceVariant
+ *          para crear contraste con el fondo base (obsidiana) de la aplicación.
+ */
 @Composable
 fun SteelCard(
     modifier: Modifier = Modifier,
@@ -51,6 +60,9 @@ fun SteelCard(
     }
 }
 
+/**
+ * @brief Cabecera de sección para el interior de las tarjetas.
+ */
 @Composable
 fun SectionTitle(text: String, icon: ImageVector? = null) {
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -62,7 +74,10 @@ fun SectionTitle(text: String, icon: ImageVector? = null) {
     }
 }
 
-/** Botón primario táctil (alto 56 dp): acción principal de la pantalla. */
+/**
+ * @brief Botón de acción principal, grande y ergonómico.
+ * @param loading Si es true, oculta el texto/icono y muestra un spinner de carga circular.
+ */
 @Composable
 fun PrimaryActionButton(
     text: String,
@@ -76,6 +91,7 @@ fun PrimaryActionButton(
 ) {
     Button(
         onClick = onClick,
+        // Bloqueamos el botón automáticamente si la acción está cargando
         enabled = enabled && !loading,
         modifier = modifier.fillMaxWidth().height(56.dp),
         shape = MaterialTheme.shapes.small,
@@ -90,13 +106,21 @@ fun PrimaryActionButton(
     }
 }
 
-/** Botón de peligro (parar / apagar / desconectar). */
+/**
+ * @brief Variante destructiva (roja) del botón principal. Usado para paradas de emergencia o desconexiones.
+ */
 @Composable
 fun DangerButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, icon: ImageVector? = null, enabled: Boolean = true) =
     PrimaryActionButton(text, onClick, modifier, enabled, icon,
         container = MaterialTheme.colorScheme.error, onContainer = MaterialTheme.colorScheme.onError)
 
-/** Valor numérico de telemetría en monoespaciada (con etiqueta opcional). */
+/* ============================================================================
+ *  2. INDICADORES Y PÍLDORAS DE INFORMACIÓN
+ * ========================================================================== */
+
+/**
+ * @brief Etiqueta para valores de sensores. Utiliza la tipografía monoespaciada para alinear números.
+ */
 @Composable
 fun MonoValue(value: String, label: String? = null, tint: Color = MaterialTheme.colorScheme.onSurface) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -105,7 +129,9 @@ fun MonoValue(value: String, label: String? = null, tint: Color = MaterialTheme.
     }
 }
 
-/** Píldora de estado: punto de color + texto (OK / armado / peligro...). */
+/**
+ * @brief Etiqueta visual pequeña con un punto de color y texto descriptivo.
+ */
 @Composable
 fun StatusPill(text: String, color: Color) {
     Row(
@@ -120,32 +146,16 @@ fun StatusPill(text: String, color: Color) {
     }
 }
 
-/** Fila de capacidad: nombre + tick verde / cruz roja. */
-@Composable
-fun CapabilityRow(name: String, available: Boolean) {
-    Row(
-        Modifier.fillMaxWidth().padding(vertical = 11.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(name, style = MaterialTheme.typography.bodyLarge)
-        Icon(
-            if (available) Icons.Default.CheckCircle else Icons.Default.Cancel,
-            contentDescription = if (available) "Disponible" else "No disponible",
-            tint = if (available) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.error,
-            modifier = Modifier.size(22.dp)
-        )
-    }
-}
-
 /* ============================================================================
- *  PIEZAS DE VISUALIZACIÓN DE DATOS  (Dashboard avanzado)
+ *  3. VISUALIZACIÓN DE DATOS AVANZADA
  * ========================================================================== */
 
 /**
- * Anillo de progreso circular con valor central. Sustituye barras lineales y
- * cifras sueltas por un patrón "instrumento" legible de un vistazo. Sin lógica:
- * recibe un progreso 0f..1f ya calculado por el ViewModel.
+ * @brief Anillo de progreso circular dibujado a mano usando el Canvas de Compose.
+ * @details Este componente es clave en el Dashboard para mostrar la carga del PC o de la batería.
+ *          Dibuja un arco de fondo gris y un arco superpuesto con el color y el grado de progreso indicado.
+ * @param progress Valor normalizado de 0.0f a 1.0f que representa cuánto rellenar el anillo.
+ * @param valueText Texto numérico a mostrar en el centro (ej. "45%").
  */
 @Composable
 fun MetricRing(
@@ -159,27 +169,46 @@ fun MetricRing(
     valueStyle: androidx.compose.ui.text.TextStyle = MonoData,
 ) {
     val trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f)
+
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = modifier) {
         Box(Modifier.size(diameter), contentAlignment = Alignment.Center) {
+
+            // --- DIBUJO GEOMÉTRICO (CANVAS) ---
             Canvas(Modifier.size(diameter)) {
                 val sw = stroke.toPx()
                 val inset = sw / 2f
                 val arcSize = Size(size.width - sw, size.height - sw)
-                // Track gris visible
-                drawArc(trackColor, 0f, 360f, false,
+
+                // 1. Pista de fondo gris (Anillo completo de 360 grados)
+                drawArc(
+                    trackColor,
+                    startAngle = 0f,
+                    sweepAngle = 360f,
+                    useCenter = false,
                     topLeft = androidx.compose.ui.geometry.Offset(inset, inset),
-                    size = arcSize, style = Stroke(width = sw, cap = StrokeCap.Round))
-                drawArc(color, -90f, progress.coerceIn(0f, 1f) * 360f, false,
+                    size = arcSize,
+                    style = Stroke(width = sw, cap = StrokeCap.Round)
+                )
+
+                // 2. Arco de progreso activo (-90f es necesario para que empiece a dibujar "desde las 12 en punto")
+                drawArc(
+                    color,
+                    startAngle = -90f,
+                    sweepAngle = progress.coerceIn(0f, 1f) * 360f, // Multiplicamos el porcentaje normalizado por los grados del círculo
+                    useCenter = false,
                     topLeft = androidx.compose.ui.geometry.Offset(inset, inset),
-                    size = arcSize, style = Stroke(width = sw, cap = StrokeCap.Round))
+                    size = arcSize,
+                    style = Stroke(width = sw, cap = StrokeCap.Round)
+                )
             }
-            // Columna para alinear el valor numérico y el label "BATERÍA" internamente
+
+            // --- TEXTO CENTRAL ---
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(valueText, style = valueStyle, color = MaterialTheme.colorScheme.onSurface)
                 if (label.isNotEmpty()) {
                     Text(
                         text = label.uppercase(),
-                        style = MonoLabel.copy(fontSize = 9.sp), // Tamaño ajustado para encajar
+                        style = MonoLabel.copy(fontSize = 9.sp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -188,7 +217,9 @@ fun MetricRing(
     }
 }
 
-/** AssistChip de capacidad: punto de estado + nombre. Reemplaza la lista plana. */
+/**
+ * @brief Píldora compacta que indica si un sensor o actuador específico está activo en el robot.
+ */
 @Composable
 fun CapabilityChip(name: String, available: Boolean) {
     val cs = MaterialTheme.colorScheme
@@ -196,6 +227,7 @@ fun CapabilityChip(name: String, available: Boolean) {
     val container = if (available) cs.surface else cs.error.copy(alpha = 0.10f)
     val border = if (available) cs.outline else cs.error.copy(alpha = 0.30f)
     val labelColor = if (available) cs.onSurface else cs.error
+
     Surface(shape = MaterialTheme.shapes.small, color = container, border = BorderStroke(1.dp, border)) {
         Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(7.dp).clip(CircleShape).background(dot))
@@ -204,22 +236,23 @@ fun CapabilityChip(name: String, available: Boolean) {
         }
     }
 }
+
 /* ============================================================================
- *  CABECERA COMÚN DE PANTALLA  ·  "RESUMEN / Título" + píldora de batería
- *  Se usa en el topBar de MainScreen para TODAS las sub-pantallas: solo cambia
- *  el texto (eyebrow + title). Así la cabecera es idéntica en toda la app.
+ *  4. NAVEGACIÓN Y CABECERAS
  * ========================================================================== */
 
-/** Píldora de batería verde/ámbar/roja con icono dentro de una cápsula. */
+/**
+ * @brief Mini-widget para la batería del robot. Cambia de color dinámicamente según el porcentaje y el estado de carga.
+ */
 @Composable
 fun BatteryPill(batteryPct: Double?, isCharging: Boolean) {
     val cs = MaterialTheme.colorScheme
     val color = when {
-        batteryPct == null -> cs.onSurfaceVariant
-        isCharging         -> cs.secondary
-        batteryPct > 50    -> cs.tertiary
-        batteryPct > 25    -> cs.secondary
-        else               -> cs.error
+        batteryPct == null -> cs.onSurfaceVariant // Estado desconocido
+        isCharging         -> cs.secondary        // Cargando (Amarillo/Azul según tema)
+        batteryPct > 50    -> cs.tertiary         // Saludable (Verde)
+        batteryPct > 25    -> cs.secondary        // Aviso (Amarillo)
+        else               -> cs.error            // Crítico (Rojo)
     }
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -245,8 +278,9 @@ fun BatteryPill(batteryPct: Double?, isCharging: Boolean) {
 }
 
 /**
- * Cabecera de pantalla: etiqueta pequeña en mayúsculas ("RESUMEN"), título
- * grande ("Dashboard") y, a la derecha, la píldora de batería.
+ * @brief Cabecera universal para el tope de todas las pantallas de control.
+ * @param eyebrow Texto superior pequeño, generalmente para indicar la categoría (ej. "TELEOPERACIÓN").
+ * @param title Texto principal, da nombre a la vista actual (ej. "Joystick Manual").
  */
 @Composable
 fun ScreenHeader(
@@ -283,10 +317,15 @@ fun ScreenHeader(
 }
 
 /* ============================================================================
- *  WRAP ROW  ·  Rejilla que coloca los hijos en fila y SALTA de línea cuando
- *  no caben. Equivale a FlowRow pero implementado con la API base `Layout`,
- *  por lo que funciona en cualquier versión de Compose (sin dependencias).
+ *  5. LAYOUTS PERSONALIZADOS
  * ========================================================================== */
+
+/**
+ * @brief Contenedor "FlowLayout" implementado a mano.
+ * @details Coloca los componentes hijos en una fila horizontal. Si el siguiente componente no cabe
+ *          en el ancho disponible de la pantalla, hace un "salto de línea" y continúa debajo.
+ *          Se implementa de forma nativa interceptando el motor de renderizado (`Layout`) de Compose.
+ */
 @Composable
 fun WrapRow(
     modifier: Modifier = Modifier,
@@ -294,37 +333,41 @@ fun WrapRow(
     verticalGap: Dp = 8.dp,
     content: @Composable () -> Unit
 ) {
+    // Interceptamos el motor de medidas (measure) y posicionamiento (place) de Compose
     Layout(content = content, modifier = modifier) { measurables, constraints ->
         val hGap = horizontalGap.roundToPx()
         val vGap = verticalGap.roundToPx()
         val maxWidth = constraints.maxWidth
 
-        // Medimos cada hijo sin forzar ancho máximo
+        // 1. FASE DE MEDIDA: Preguntamos a cada hijo cuánto ocupa sin forzarle a expandirse
         val placeables = measurables.map { it.measure(constraints.copy(minWidth = 0)) }
 
-        // Repartimos en filas según el ancho disponible
+        // 2. FASE DE CÁLCULO DE FILAS: Repartimos los hijos según el ancho de la pantalla
         val rows = mutableListOf<MutableList<androidx.compose.ui.layout.Placeable>>()
         var currentRow = mutableListOf<androidx.compose.ui.layout.Placeable>()
         var currentRowWidth = 0
 
         placeables.forEach { p ->
             val extra = if (currentRow.isEmpty()) 0 else hGap
+            // Si meter este elemento supera el ancho de pantalla, guardamos la fila y creamos una nueva
             if (currentRowWidth + extra + p.width > maxWidth && currentRow.isNotEmpty()) {
                 rows.add(currentRow)
                 currentRow = mutableListOf()
                 currentRowWidth = 0
             }
+
             val extra2 = if (currentRow.isEmpty()) 0 else hGap
             currentRow.add(p)
             currentRowWidth += extra2 + p.width
         }
         if (currentRow.isNotEmpty()) rows.add(currentRow)
 
-        // Altura total = suma de alturas de fila (la más alta de cada fila) + huecos
+        // Calculamos la altura total que necesitamos pedirle a la pantalla
         val rowHeights = rows.map { row -> row.maxOfOrNull { it.height } ?: 0 }
         val totalHeight = rowHeights.sum() + vGap * (rows.size - 1).coerceAtLeast(0)
         val layoutHeight = totalHeight.coerceIn(constraints.minHeight, constraints.maxHeight)
 
+        // 3. FASE DE DIBUJADO: Colocamos las coordenadas exactas de cada hijo
         layout(width = maxWidth, height = layoutHeight) {
             var y = 0
             rows.forEachIndexed { index, row ->

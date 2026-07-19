@@ -1,3 +1,14 @@
+/**
+ * @file SensorsScreen.kt
+ * @brief Interfaz principal de telemetría y sensores en tiempo real.
+ * @details Este módulo renderiza el estado interno y externo del robot mediante
+ *          técnicas de dibujo de alto rendimiento (Canvas) y gráficos.
+ *          Implementa un patrón de componentes co-localizados para
+ *          mantener encapsulada la lógica visual específica de cada tipo de sensor de ROS 2.
+ * @author Enrique Gómez
+ * @date 2026
+ */
+
 package com.enrique.tiago_app.ui.screens
 
 import androidx.compose.animation.core.animateFloatAsState
@@ -38,14 +49,17 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 /* ============================================================================
- *  PANTALLA DE SENSORES  ·  Rediseño AXON
- *  - Tarjetas con estilo coherente (superficie + borde + cabecera con icono).
- *  - Gráficas de tiempo real con historial para las magnitudes que varían.
- *  - LaserScan con anillos etiquetados y cono frontal.
- *  - IMU con horizonte artificial (roll/pitch) además de las cifras.
- *  - Estados "sin datos" claros por tipo de sensor.
+ *  PANTALLA DE SENSORES PRINCIPAL
  * ========================================================================== */
 
+/**
+ * @brief Orquestador visual de la pantalla de sensores.
+ * @details Gestiona el ciclo de vida de la suscripción a tópicos (solicitando al
+ *          ViewModel que detenga el tráfico de red al destruirse la vista mediante
+ *          un DisposableEffect). Renderiza una interfaz adaptable (Normal/Compacta).
+ * @param viewModel Lógica de negocio responsable del descubrimiento y suscripción de nodos ROS 2.
+ * @param isCompact Flag que determina si la vista se renderiza en modo pantalla dividida (Split-Screen).
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SensorScreen(viewModel: SensorViewModel, isCompact: Boolean = false) {
@@ -57,13 +71,14 @@ fun SensorScreen(viewModel: SensorViewModel, isCompact: Boolean = false) {
     val odomTrail by viewModel.odomTrail.collectAsState()
     val cs = MaterialTheme.colorScheme
 
+    // Protección de recursos: Libera la red cuando la pantalla no es visible
     DisposableEffect(Unit) {
         onDispose { viewModel.onScreenDisposed() }
     }
 
     Column(modifier = Modifier.fillMaxSize().padding(if (isCompact) 8.dp else 16.dp)) {
 
-        // 1. ZONA SUPERIOR: escaneo / selección
+        // --- ZONA 1: ESTADOS VACÍOS Y DESCUBRIMIENTO ---
         if (!hasSearched && availableSensors.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -92,12 +107,12 @@ fun SensorScreen(viewModel: SensorViewModel, isCompact: Boolean = false) {
                 }
             }
         } else {
+            // --- ZONA 2: SELECTOR DE TÓPICOS (Chips) ---
             if (!isCompact) {
                 Text("Selecciona las gráficas a mostrar:", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = cs.onSurface)
                 Spacer(modifier = Modifier.height(10.dp))
             }
 
-            // Chips de selección (scroll horizontal)
             Row(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -115,7 +130,7 @@ fun SensorScreen(viewModel: SensorViewModel, isCompact: Boolean = false) {
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // 2. ZONA DE TARJETAS
+            // --- ZONA 3: RENDERIZADO DE TARJETAS DE DATOS ---
             if (activeSensorTopics.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
@@ -150,11 +165,15 @@ fun SensorScreen(viewModel: SensorViewModel, isCompact: Boolean = false) {
     }
 }
 
-/* ---------------------------------------------------------------------------
- *  PIEZAS COMUNES DE ESTILO
- * ------------------------------------------------------------------------- */
+/* ============================================================================
+ *  PIEZAS COMUNES DE ESTILO Y UTILIDADES
+ * ========================================================================== */
 
-/** Icono representativo por tipo de sensor. */
+/**
+ * @brief Mapea el tipo de mensaje ROS 2 a una representación visual.
+ * @param type Identificador del tipo de sensor (ej. "LaserScan", "Imu").
+ * @return Icono vectorial Material de Jetpack Compose.
+ */
 private fun iconForSensor(type: String): ImageVector = when (type) {
     "LaserScan" -> Icons.Default.Radar
     "Imu" -> Icons.Default.Explore
@@ -168,12 +187,16 @@ private fun iconForSensor(type: String): ImageVector = when (type) {
     else -> Icons.Default.Sensors
 }
 
-/** Chip de selección con icono, coherente con el azul de marca. */
+/**
+ * @brief Botón tipo "Chip" para habilitar/deshabilitar la suscripción a un tópico.
+ * @param label Texto a mostrar (nombre corto del tópico).
+ * @param icon Icono representativo del tipo de sensor.
+ * @param selected Determina si el tópico está siendo escuchado activamente.
+ * @param onClick Acción lambda disparada al interactuar con el chip.
+ */
 @Composable
 private fun SensorSelectChip(label: String, icon: ImageVector, selected: Boolean, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
-    // Naranja de marca al seleccionar, igual que los FilterChip de topics/services/
-    // actions y articulaciones (usan secondaryContainer del tema).
     val container = if (selected) cs.secondaryContainer else cs.surface
     val border = if (selected) cs.secondary.copy(alpha = 0.5f) else cs.outline
     val content = if (selected) cs.onSecondaryContainer else cs.onSurfaceVariant
@@ -194,7 +217,17 @@ private fun SensorSelectChip(label: String, icon: ImageVector, selected: Boolean
     }
 }
 
-/** Tarjeta de sensor con cabecera (icono + topic + badge de tipo). */
+/**
+ * @brief Contenedor estandarizado para la información de un sensor.
+ * @details Gestiona el estado de "Carga/Espera" cuando se suscribe a un tópico pero
+ *          aún no ha llegado el primer paquete de datos (Data Stream Lifecycle).
+ * @param sensorInfo Metadatos de descubrimiento del sensor.
+ * @param data Último paquete de datos recibido (puede ser nulo si está pendiente).
+ * @param isCompact Modificador de tamaño para layouts reducidos.
+ * @param odomTrail Historial de posiciones XY para el componente de odometría.
+ * @param onTrailPoint Callback para registrar una nueva posición en el mapa.
+ * @param onNewSegment Callback para indicar una discontinuidad en la trazada (teletransporte/desconexión).
+ */
 @Composable
 fun SensorCard(
     sensorInfo: SensorInfo,
@@ -212,7 +245,7 @@ fun SensorCard(
         border = BorderStroke(1.dp, cs.outline)
     ) {
         Column(modifier = Modifier.padding(if (isCompact) 8.dp else 16.dp).fillMaxWidth()) {
-            // Cabecera
+            // Cabecera de la tarjeta
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -245,8 +278,8 @@ fun SensorCard(
 
             Spacer(modifier = Modifier.height(if (isCompact) 6.dp else 14.dp))
 
+            // Enrutador de Renderizado según el Tipo Polimórfico del Dato
             if (data == null) {
-                // Estado "sin datos" claro y por tipo
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
                     CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = cs.primary)
                     Spacer(Modifier.width(10.dp))
@@ -273,23 +306,23 @@ fun SensorCard(
     }
 }
 
-/* ---------------------------------------------------------------------------
- *  MINI-GRÁFICA DE HISTORIAL  (sparkline)  ·  Punto 1
- *  Acumula los últimos N valores en el propio Composable (sin tocar el
- *  ViewModel) y los pinta como línea. Se usa para magnitudes que varían.
- * ------------------------------------------------------------------------- */
+/* ============================================================================
+ *  SISTEMA DE GRÁFICAS DE HISTORIAL
+ * ========================================================================== */
+
 /**
- * Historial de una señal muestreado a intervalos FIJOS de tiempo.
- *
- * Toma el valor actual cada [sampleMs] milisegundos y lo añade al buffer, cambie
- * o no. Esto hace que la gráfica avance con el tiempo real: si el robot está
- * parado (valor constante 0), la línea sigue corriendo plana en lugar de
- * congelarse. Se mantiene el último valor recibido entre muestras.
+ * @brief Implementa un buffer circular asíncrono para generar historial temporal.
+ * @details Toma el valor actual a intervalos fijos de tiempo en lugar
+ *          de solo cuando llega un mensaje de ROS 2. Esto garantiza que la gráfica
+ *          avance linealmente con el tiempo real, incluso si el valor no cambia.
+ * @param value Valor numérico escalar actual de la señal a monitorizar.
+ * @param maxPoints Capacidad máxima del buffer circular (ancho del gráfico).
+ * @param sampleMs Frecuencia de muestreo asíncrono (polling) en milisegundos.
+ * @return Lista inmutable reactiva (State) con los datos del historial listos para renderizar.
  */
 @Composable
 private fun rememberHistory(value: Number, maxPoints: Int = 60, sampleMs: Long = 200L): List<Float> {
     val history = remember { mutableStateListOf<Float>() }
-    // Guardamos el valor más reciente en un estado que el reloj lee en cada tic.
     val latest = remember { mutableStateOf(value.toFloat()) }
     latest.value = value.toFloat()
 
@@ -303,6 +336,18 @@ private fun rememberHistory(value: Number, maxPoints: Int = 60, sampleMs: Long =
     return history
 }
 
+/**
+ * @brief Motor de renderizado vectorial para minigráficas (Sparklines).
+ * @details Dibuja curvas suaves, relleno bajo la curva y manejo de rangos dinámicos.
+ * @param values Buffer de datos históricos.
+ * @param color Tinte base para la traza y el sombreado.
+ * @param modifier Ajustes de layout proporcionados por el padre.
+ * @param height Altura estática del componente Canvas.
+ * @param minFloor Valor mínimo forzado del eje Y (útil para porcentajes = 0).
+ * @param maxCeil Valor máximo forzado del eje Y (útil para porcentajes = 100).
+ * @param minSpan Rango dinámico mínimo para evitar amplificar el ruido numérico del sensor.
+ * @param zeroAnchored Si es verdadero, fuerza que la línea del Cero quede anclada verticalmente en el centro.
+ */
 @Composable
 private fun Sparkline(
     values: List<Float>,
@@ -311,8 +356,8 @@ private fun Sparkline(
     height: androidx.compose.ui.unit.Dp = 56.dp,
     minFloor: Number? = null,
     maxCeil: Number? = null,
-    minSpan: Float = 0f,      // rango vertical mínimo: evita amplificar ruido diminuto
-    zeroAnchored: Boolean = false, // si true, el eje se centra en 0 (útil para velocidades)
+    minSpan: Float = 0f,
+    zeroAnchored: Boolean = false,
 ) {
     val cs = MaterialTheme.colorScheme
     Canvas(modifier = modifier.fillMaxWidth().height(height)) {
@@ -322,9 +367,6 @@ private fun Sparkline(
 
         if (minFloor == null && maxCeil == null) {
             if (zeroAnchored) {
-                // Eje simétrico alrededor del 0: la magnitud (positiva o negativa)
-                // más grande define el alcance, con un mínimo de minSpan/2. Así la
-                // línea en 0 siempre cae en el centro vertical, estable en el tiempo.
                 val maxAbs = maxOf(values.maxOf { kotlin.math.abs(it) }, minSpan / 2f)
                 minV = -maxAbs
                 maxV = maxAbs
@@ -340,8 +382,6 @@ private fun Sparkline(
 
         val span = (maxV - minV).takeIf { it > 1e-6f } ?: 1f
 
-        // Con un solo punto aún no hay segmento; dibujamos una recta horizontal
-        // en su valor para que se vea la línea desde el primer instante.
         val n = values.size
         val stepX = if (n > 1) size.width / (n - 1) else size.width
         fun yFor(v: Float): Float {
@@ -349,7 +389,6 @@ private fun Sparkline(
             return size.height * (1f - norm) * 0.8f + size.height * 0.1f
         }
 
-        // línea base tenue (posición del 0 si el eje está anclado a 0)
         val baseY = if (zeroAnchored) yFor(0f) else size.height * 0.9f
         drawLine(
             cs.outline.copy(alpha = 0.5f),
@@ -358,7 +397,6 @@ private fun Sparkline(
             1f
         )
 
-        // relleno bajo la curva
         val fillPath = Path().apply {
             moveTo(0f, size.height)
             lineTo(0f, yFor(values[0]))
@@ -372,7 +410,6 @@ private fun Sparkline(
         }
         drawPath(fillPath, color.copy(alpha = 0.12f))
 
-        // curva
         val linePath = Path().apply {
             moveTo(0f, yFor(values[0]))
             if (n == 1) {
@@ -383,13 +420,17 @@ private fun Sparkline(
         }
         drawPath(linePath, color, style = Stroke(width = 3f, cap = StrokeCap.Round))
 
-        // punto final
         val lastX = if (n > 1) (n - 1) * stepX else size.width
         drawCircle(color, radius = 4f, center = Offset(lastX, yFor(values.last())))
     }
 }
 
-/** Fila etiqueta + valor grande en mono, reutilizable. */
+/**
+ * @brief Componente UI estandarizado para pares Clave-Valor numéricos.
+ * @param label Etiqueta descriptiva del dato.
+ * @param value Cadena de texto formateada con la magnitud (idealmente fuente monoespaciada).
+ * @param color Tinte opcional para resaltar magnitudes críticas.
+ */
 @Composable
 private fun MetricLine(label: String, value: String, color: Color = MaterialTheme.colorScheme.onSurface) {
     Row(
@@ -402,11 +443,17 @@ private fun MetricLine(label: String, value: String, color: Color = MaterialThem
     }
 }
 
-/* ===========================================================================
- *  VISTAS ESPECÍFICAS
- * ========================================================================= */
+/* ============================================================================
+ *  RUTINAS DE DIBUJO ESPECÍFICAS DE DOMINIO (SENSOR VIEWS)
+ * ========================================================================== */
 
-/* ---- LaserScan mejorado: anillos etiquetados + cono frontal + color prox. -- */
+/**
+ * @brief Visualizador topológico 2D del sensor LiDAR (LaserScan).
+ * @details Transforma coordenadas polares (Array de distancias en varios ángulos) a
+ *          coordenadas cartesianas en pantalla mediante trigonometría directa.
+ * @param scan modelo del mensaje de escaneo láser de ROS 2.
+ * @param isCompact Escala la vista para la interfaz multitarea.
+ */
 @Composable
 fun LaserScanView(scan: LaserScanData, isCompact: Boolean = false) {
     val cs = MaterialTheme.colorScheme
@@ -416,9 +463,6 @@ fun LaserScanView(scan: LaserScanData, isCompact: Boolean = false) {
     val nearColor = Color(0xFFFF5468)
     val midColor = cs.primary
     val farColor = cs.tertiary
-
-    // Offset de orientación del láser (radianes). Con Math.PI/4 el frente del robot
-    // cae bajo la flecha ↑ (calibrado con la columna del simulador).
     val orientationOffset = (Math.PI / 4).toFloat()
 
     Canvas(modifier = Modifier.fillMaxWidth().height(if (isCompact) 118.dp else 240.dp)) {
@@ -428,10 +472,6 @@ fun LaserScanView(scan: LaserScanData, isCompact: Boolean = false) {
         val scale = if (scan.rangeMax > 0f) maxPixels / scan.rangeMax else 10f
         val center = Offset(centerX, centerY)
 
-        // Proyección: idéntica a la versión que dejaba el frente arriba y colocaba
-        // bien los obstáculos, pero con la componente X reflejada (signo +) para
-        // corregir el espejo izquierda/derecha. La Y no cambia, así que el frente
-        // sigue cayendo arriba exactamente igual que antes.
         fun project(theta: Float, range: Float): Offset {
             val a = theta + orientationOffset
             val sx = centerX + (range * sin(a) * scale)
@@ -439,16 +479,13 @@ fun LaserScanView(scan: LaserScanData, isCompact: Boolean = false) {
             return Offset(sx, sy)
         }
 
-        // Cono frontal: sector FIJO apuntando hacia arriba, igual que la flecha de
-        // frente. Se dibuja en coordenadas de pantalla (no con project) para que
-        // ambos coincidan siempre, que es como quedaba bien calibrado.
+        // Cono de orientación visual (Frente del robot)
         val conePath = Path().apply {
             moveTo(centerX, centerY)
             val half = 0.45f // ~26° a cada lado
             val steps = 12
             for (i in 0..steps) {
                 val a = -half + (2 * half) * (i / steps.toFloat())
-                // ángulo 0 = arriba: x = sin(a), y = -cos(a)
                 val x = centerX + sin(a) * maxPixels
                 val y = centerY - cos(a) * maxPixels
                 lineTo(x, y)
@@ -457,7 +494,6 @@ fun LaserScanView(scan: LaserScanData, isCompact: Boolean = false) {
         }
         drawPath(conePath, cs.primary.copy(alpha = 0.06f))
 
-        // Anillos concéntricos
         val ringStep = when {
             scan.rangeMax <= 2f -> 0.5f
             scan.rangeMax <= 6f -> 1f
@@ -469,11 +505,9 @@ fun LaserScanView(scan: LaserScanData, isCompact: Boolean = false) {
             r += ringStep
         }
 
-        // Ejes
         drawLine(cs.outline.copy(alpha = 0.4f), Offset(centerX, centerY - maxPixels), Offset(centerX, centerY + maxPixels), 1f)
         drawLine(cs.outline.copy(alpha = 0.4f), Offset(centerX - maxPixels, centerY), Offset(centerX + maxPixels, centerY), 1f)
 
-        // Puntos del láser
         scan.ranges.forEachIndexed { index, range ->
             if (range in scan.rangeMin..scan.rangeMax) {
                 val theta = scan.angleMin + (index * scan.angleIncrement)
@@ -488,18 +522,15 @@ fun LaserScanView(scan: LaserScanData, isCompact: Boolean = false) {
             }
         }
 
-        // Marcador de FRENTE: flecha fija apuntando hacia arriba (coincide con el cono).
         val frontTip = Offset(centerX, centerY - maxPixels * 0.9f)
         drawLine(cs.primary, center, frontTip, strokeWidth = 3f, cap = StrokeCap.Round)
         drawLine(cs.primary, frontTip, Offset(frontTip.x - 7f, frontTip.y + 10f), strokeWidth = 3f, cap = StrokeCap.Round)
         drawLine(cs.primary, frontTip, Offset(frontTip.x + 7f, frontTip.y + 10f), strokeWidth = 3f, cap = StrokeCap.Round)
 
-        // Robot en el centro
         drawCircle(cs.primary, radius = 7f, center = center)
         drawCircle(Color.White, radius = 3f, center = center)
     }
 
-    // Leyenda
     Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         LegendDot(nearColor, "Cerca")
         LegendDot(midColor, "Medio")
@@ -509,6 +540,11 @@ fun LaserScanView(scan: LaserScanData, isCompact: Boolean = false) {
     }
 }
 
+/**
+ * @brief Elemento de diseño para las leyendas de gráficos de color.
+ * @param color Tinte semántico a mostrar en el punto.
+ * @param label Etiqueta descriptiva del color.
+ */
 @Composable
 private fun LegendDot(color: Color, label: String) {
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -518,12 +554,17 @@ private fun LegendDot(color: Color, label: String) {
     }
 }
 
-/* ---- IMU: horizonte artificial + cifras + gráficas de aceleración (plegables) */
+/**
+ * @brief Unidad de Medición Inercial (IMU) y Horizonte Artificial.
+ * @details Extrae los ángulos de Alabeo (Roll) y Cabeceo (Pitch) analizando la
+ *          fuerza de la gravedad sobre la aceleración lineal, y dibuja un
+ *          giroscopio simulado para entender la inclinación física del robot.
+ * @param imu modelo del mensaje del IMU.
+ * @param isCompact Modificador para la vista dividida.
+ */
 @Composable
 fun ImuView(imu: ImuData, isCompact: Boolean = false) {
     val cs = MaterialTheme.colorScheme
-
-    // Roll/pitch a partir de la aceleración lineal (estimación por gravedad).
     val ax = imu.linearAcceleration.x
     val ay = imu.linearAcceleration.y
     val az = imu.linearAcceleration.z
@@ -533,17 +574,13 @@ fun ImuView(imu: ImuData, isCompact: Boolean = false) {
     val animRoll by animateFloatAsState(roll, label = "roll")
     val animPitch by animateFloatAsState(pitch, label = "pitch")
 
-    // Historiales de aceleración (uno por eje). Se llenan siempre, aunque el
-    // desplegable esté cerrado, para que al abrirlo ya haya traza dibujada.
     val histX = rememberHistory(ax)
     val histY = rememberHistory(ay)
     val histZ = rememberHistory(az)
-
     var showAccelCharts by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            // Horizonte artificial
             Box(
                 Modifier.size(if (isCompact) 70.dp else 120.dp).clip(CircleShape).background(cs.surfaceVariant),
                 contentAlignment = Alignment.Center
@@ -582,7 +619,6 @@ fun ImuView(imu: ImuData, isCompact: Boolean = false) {
             }
         }
 
-        // --- Botón que despliega las gráficas de aceleración ---
         Spacer(Modifier.height(if (isCompact) 4.dp else 10.dp))
         Surface(
             shape = MaterialTheme.shapes.small,
@@ -609,7 +645,6 @@ fun ImuView(imu: ImuData, isCompact: Boolean = false) {
             }
         }
 
-        // --- Gráficas desplegables (una por eje) ---
         if (showAccelCharts) {
             Spacer(Modifier.height(10.dp))
             AccelAxisChart("Eje X", histX, cs.primary)
@@ -627,7 +662,12 @@ fun ImuView(imu: ImuData, isCompact: Boolean = false) {
     }
 }
 
-/** Fila con etiqueta de eje, valor actual y sparkline propio. */
+/**
+ * @brief Subcomponente encapsulado para dibujar una métrica simple junto a su sparkline.
+ * @param label Nombre del eje monitorizado.
+ * @param history Array inmutable con las mediciones.
+ * @param color Color de la traza para diferenciar visualmente los tres ejes.
+ */
 @Composable
 private fun AccelAxisChart(label: String, history: List<Float>, color: Color) {
     val current = history.lastOrNull() ?: 0f
@@ -635,7 +675,12 @@ private fun AccelAxisChart(label: String, history: List<Float>, color: Color) {
     Sparkline(values = history, color = color, height = 40.dp, minSpan = 1f)
 }
 
-/* ---- Batería: barra + historial de porcentaje ---------------------------- */
+/**
+ * @brief Sensor de Energía Interna.
+ * @param battery Paquete de telemetría de energía de ROS 2.
+ * @param topic Identificador ROS del origen.
+ * @param isCompact Modificador para vistas reducidas.
+ */
 @Composable
 fun BatteryView(battery: BatterySensorData, topic: String, isCompact: Boolean = false) {
     val cs = MaterialTheme.colorScheme
@@ -662,7 +707,12 @@ fun BatteryView(battery: BatterySensorData, topic: String, isCompact: Boolean = 
     Sparkline(values = history, color = barColor, height = if (isCompact) 34.dp else 56.dp, minFloor = 0f, maxCeil = 100f)
 }
 
-/* ---- Range: barra + historial de distancia ------------------------------- */
+/**
+ * @brief Telémetro acústico o de infrarrojos 1D.
+ * @param rangeData Paquete con distancia actual y límites absolutos del hardware.
+ * @param topic Identificador de tópico ROS.
+ * @param isCompact Escala la vista.
+ */
 @Composable
 fun RangeView(rangeData: RangeSensorData, topic: String, isCompact: Boolean = false) {
     val cs = MaterialTheme.colorScheme
@@ -688,7 +738,19 @@ fun RangeView(rangeData: RangeSensorData, topic: String, isCompact: Boolean = fa
     Sparkline(values = history, color = barColor, height = if (isCompact) 34.dp else 56.dp, minFloor = rangeData.minRange, maxCeil = rangeData.maxRange)
 }
 
-/* ---- Odometría: posición + velocidades con historial --------------------- */
+/**
+ * @brief Visualización integral de Cinemática y Posicionamiento Local.
+ * @details Monitoriza la velocidad y levanta un componente interactivo ("TrailMap")
+ *          que dibuja vectorialmente la trayectoria física real por la que se ha
+ *          movido el chasis del robot utilizando el filtro predictivo (deadband)
+ *          para suavizar ruidos inerciales estacionarios.
+ * @param odom Paquete de información cinemática en formato nav_msgs.
+ * @param topic Tópico ROS 2 fuente.
+ * @param isCompact Layout denso para uso en split-screen.
+ * @param odomTrail Array de puntos con el histórico de coordenadas.
+ * @param onTrailPoint Función puente para delegar la persistencia al ViewModel.
+ * @param onNewSegment Función puente para manejar fallos de conexión (tramos rotos).
+ */
 @Composable
 fun OdometryView(
     odom: OdometryData,
@@ -707,9 +769,6 @@ fun OdometryView(
     }
 
     Spacer(modifier = Modifier.height(if (isCompact) 6.dp else 12.dp))
-    // Banda muerta ligera: por debajo de 0.01 lo tratamos como 0 (quita el ruido
-    // numérico). El eje va anclado a 0, así que estar parado dibuja una línea
-    // plana en el centro que avanza con el tiempo (sincronizada), en vez de nada.
     val linVel = deadband(odom.linearVelocity.toFloat(), 0.01f)
     val linHist = rememberHistory(linVel)
     MetricLine("Vel. lineal", String.format("%.2f m/s", linVel), cs.primary)
@@ -721,13 +780,7 @@ fun OdometryView(
     MetricLine("Vel. angular", String.format("%.2f rad/s", angVel), cs.tertiary)
     Sparkline(values = angHist, color = cs.tertiary, height = if (isCompact) 28.dp else 44.dp, minSpan = 0.4f, zeroAnchored = true)
 
-    // --- Recorrido (trayectoria X/Y) persistente ---
-    // Al montarse la vista (empezamos a ver odom) marcamos el inicio de un tramo
-    // nuevo: así, si el robot se movió mientras no veíamos odom, NO se une con una
-    // línea recta; el tramo anterior queda dibujado y este empieza en la nueva pos.
     LaunchedEffect(Unit) { onNewSegment() }
-    // Reportamos la posición actual al ViewModel (que acumula el recorrido y lo
-    // conserva aunque salgamos y volvamos a entrar). El dibujo usa ese buffer.
     LaunchedEffect(odom.position.x, odom.position.y) {
         onTrailPoint(odom.position.x.toFloat(), odom.position.y.toFloat())
     }
@@ -765,7 +818,14 @@ fun OdometryView(
     }
 }
 
-/** Dibuja la trayectoria del robot en un recuadro, autoescalada, con inicio y fin marcados. */
+/**
+ * @brief Algoritmo vectorial para generar un minimapa autocentrado en tiempo real.
+ * @details Convierte coordenadas espaciales del mundo virtual del robot a dimensiones
+ *          escalables de píxeles, dibujando interpolaciones y aplicando saltos ("NaN")
+ *          si el robot pierde la conexión.
+ * @param trail Secuencia de puntos de odometría filtrados.
+ * @param isCompact Modificador para vistas reducidas.
+ */
 @Composable
 private fun TrailMap(trail: List<Offset>, isCompact: Boolean) {
     val cs = MaterialTheme.colorScheme
@@ -783,32 +843,26 @@ private fun TrailMap(trail: List<Offset>, isCompact: Boolean) {
         ) {
             if (trail.isEmpty()) return@Canvas
 
-            // Puntos reales (ignorando los separadores de tramo NaN) para el encuadre.
             val real = trail.filter { !it.x.isNaN() }
             if (real.isEmpty()) return@Canvas
             val xs = real.map { it.x }; val ys = real.map { it.y }
             val minX = xs.min(); val maxX = xs.max()
             val minY = ys.min(); val maxY = ys.max()
 
-            // La vista se centra en el punto medio del recorrido, y su tamaño es el
-            // recorrido real pero NUNCA menor que minViewMeters. Así, si el robot se
-            // mueve poco, la traza se ve pequeña y realista en lugar de estirada.
             val minViewMeters = 2f
             val cx = (minX + maxX) / 2f
             val cy = (minY + maxY) / 2f
-            val halfSpan = maxOf((maxX - minX), (maxY - minY), minViewMeters) / 2f * 1.15f // 15% de margen
+            val halfSpan = maxOf((maxX - minX), (maxY - minY), minViewMeters) / 2f * 1.15f
 
-            // metros -> píxeles (escala uniforme, misma en X e Y)
             val viewPx = minOf(size.width, size.height)
             val scale = viewPx / (halfSpan * 2f)
-            // Convención cenital: X del robot = adelante = ARRIBA ; Y = izquierda = IZQUIERDA
+
             fun toScreen(p: Offset): Offset {
-                val sx = size.width / 2f - (p.y - cy) * scale   // Y del robot -> eje X pantalla (izq)
-                val sy = size.height / 2f - (p.x - cx) * scale  // X del robot -> eje Y pantalla (arriba)
+                val sx = size.width / 2f - (p.y - cy) * scale
+                val sy = size.height / 2f - (p.x - cx) * scale
                 return Offset(sx, sy)
             }
 
-            // Rejilla con marcas cada metro
             val gridColor = cs.outline.copy(alpha = 0.25f)
             var m = kotlin.math.ceil(cx - halfSpan).toInt()
             while (m <= cx + halfSpan) {
@@ -822,23 +876,18 @@ private fun TrailMap(trail: List<Offset>, isCompact: Boolean) {
                 drawLine(gridColor, Offset(xLine, 0f), Offset(xLine, size.height), 1f)
                 m++
             }
-            // ejes centrales algo más marcados
             drawLine(cs.outline.copy(alpha = 0.45f), Offset(size.width / 2f, 0f), Offset(size.width / 2f, size.height), 1f)
             drawLine(cs.outline.copy(alpha = 0.45f), Offset(0f, size.height / 2f), Offset(size.width, size.height / 2f), 1f)
 
-            // Traza con degradado de opacidad. NO se dibuja línea a través de un
-            // corte (NaN): cada tramo es independiente, así el movimiento hecho sin
-            // ver odom no se une con una recta al reanudar.
             if (trail.size >= 2) {
                 for (i in 1 until trail.size) {
                     val p0 = trail[i - 1]; val p1 = trail[i]
-                    if (p0.x.isNaN() || p1.x.isNaN()) continue  // salto entre tramos: sin línea
+                    if (p0.x.isNaN() || p1.x.isNaN()) continue
                     val alpha = 0.25f + 0.75f * (i / (trail.size - 1).toFloat())
                     drawLine(cs.primary.copy(alpha = alpha), toScreen(p0), toScreen(p1), strokeWidth = 3f, cap = StrokeCap.Round)
                 }
             }
 
-            // Inicio (verde): primer punto real. Posición actual (azul con halo): último real.
             drawCircle(cs.tertiary, radius = 5f, center = toScreen(real.first()))
             val cur = toScreen(real.last())
             drawCircle(cs.primary.copy(alpha = 0.25f), radius = 11f, center = cur)
@@ -848,11 +897,23 @@ private fun TrailMap(trail: List<Offset>, isCompact: Boolean) {
     }
 }
 
-/** Devuelve 0 si el valor está dentro de ±threshold; si no, el valor tal cual. */
+/**
+ * @brief Filtro de software tipo 'Banda Muerta' (Deadband).
+ * @details Descarta fluctuaciones microscópicas de hardware (ej. 0.00000004 m/s)
+ *          que ensuciarían las gráficas de velocidad indicando que el robot está en reposo.
+ * @param value Valor numérico flotante en bruto proveniente de ROS 2.
+ * @param threshold Umbral físico por el cual cualquier valor por debajo es considerado cero.
+ * @return Señal estabilizada.
+ */
 private fun deadband(value: Float, threshold: Float): Float =
     if (value.absoluteValue < threshold) 0f else value
 
-/* ---- Temperatura: valor + termómetro + historial ------------------------- */
+/**
+ * @brief Representación del módulo de control térmico.
+ * @param temp Dato desempaquetado de ROS 2 en formato Temperature.
+ * @param topic Fuente del tópico para referenciado.
+ * @param isCompact Modificador para vistas pequeñas.
+ */
 @Composable
 fun TemperatureView(temp: TemperatureData, topic: String, isCompact: Boolean = false) {
     val cs = MaterialTheme.colorScheme
@@ -884,7 +945,10 @@ fun TemperatureView(temp: TemperatureData, topic: String, isCompact: Boolean = f
     Sparkline(values = history, color = tempColor, height = if (isCompact) 34.dp else 56.dp, minSpan = 5f)
 }
 
-/* ---- NavSatFix (GPS) ----------------------------------------------------- */
+/**
+ * @brief Lector de Posicionamiento Satelital Goblal (GPS/NavSat).
+ * @param gps Representación del estado geoespacial y de cobertura satelital.
+ */
 @Composable
 fun NavSatFixView(gps: NavSatFixData) {
     val cs = MaterialTheme.colorScheme
@@ -905,6 +969,11 @@ fun NavSatFixView(gps: NavSatFixData) {
     }
 }
 
+/**
+ * @brief Componente hijo para agrupar variables de latitud/longitud uniformemente.
+ * @param label Título referencial de coordenadas (ej. Latitud).
+ * @param value Cadena mapeada en grados/metros.
+ */
 @Composable
 private fun GpsField(label: String, value: String) {
     Column {
@@ -913,7 +982,11 @@ private fun GpsField(label: String, value: String) {
     }
 }
 
-/* ---- Wrench: barras centradas en cero ------------------------------------ */
+/**
+ * @brief Vector físico 6D de fuerza y par (Torque).
+ * @param wrench Objeto deserializado de la clase Wrench (nav_msgs).
+ * @param isCompact Flag Split-Screen.
+ */
 @Composable
 fun WrenchView(wrench: WrenchData, isCompact: Boolean = false) {
     val cs = MaterialTheme.colorScheme
@@ -930,6 +1003,13 @@ fun WrenchView(wrench: WrenchData, isCompact: Boolean = false) {
     ZeroCenteredBar("Z", wrench.torque.z, 10f, isCompact)
 }
 
+/**
+ * @brief Barra de progreso visual bidireccional, capaz de representar fuerzas positivas y negativas.
+ * @param label Nombre del eje (X, Y, Z).
+ * @param value Valor flotante a representar de forma simétrica.
+ * @param maxValue Límite de escala paramétrico (ej. Si la fuerza máxima del brazo es 50N).
+ * @param isCompact Modificador gráfico.
+ */
 @Composable
 fun ZeroCenteredBar(label: String, value: Number, maxValue: Float, isCompact: Boolean = false) {
     val cs = MaterialTheme.colorScheme
@@ -953,7 +1033,13 @@ fun ZeroCenteredBar(label: String, value: Number, maxValue: Float, isCompact: Bo
     }
 }
 
-/* ---- PointCloud2: solo metadatos ----------------------------------------- */
+/**
+ * @brief Componente descriptivo para datos espaciales crudos (Nubes de puntos).
+ * @details Este tipo de sensores devuelven matrices tridimensionales (Tensors) masivas que,
+ *          por limitaciones gráficas en Android, no se renderizan, por lo que este nodo
+ *          actúa como mero informador de que el sensor está activo y retransmitiendo.
+ * @param pc Parámetros y metadatos de la nube.
+ */
 @Composable
 fun PointCloudView(pc: PointCloud2Data) {
     val cs = MaterialTheme.colorScheme

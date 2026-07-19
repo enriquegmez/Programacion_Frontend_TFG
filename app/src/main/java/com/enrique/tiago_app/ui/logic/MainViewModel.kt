@@ -1,143 +1,160 @@
-package com.enrique.tiago_app.ui.logic // Ajusta a tu paquete
+/**
+ * @file MainViewModel.kt
+ * @brief ViewModel principal y orquestador del ciclo de vida de la aplicación.
+ * @details Gestiona la conectividad de bajo nivel (WebSockets), la navegación global
+ *          y ejecuta el motor asíncrono de telemetría de fondo.
+ * @author Enrique Gómez
+ * @date 2026
+ */
+
+package com.enrique.tiago_app.ui.logic
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import androidx.lifecycle.viewModelScope // ¡NUEVO! Para lanzar corrutinas en el ViewModel
-import kotlinx.coroutines.launch // ¡NUEVO!
-import kotlinx.coroutines.Job // ¡NUEVO! Para controlar el bucle de peticiones
-import kotlinx.coroutines.delay // ¡NUEVO! Para esperar entre peticiones
-import kotlinx.coroutines.isActive // ¡NUEVO! Para saber si el bucle sigue vivo
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
-// Importamos el Director y las Constantes
-import com.enrique.tiago_app.logic.ProtocolDirector
+// --- IMPORTS DE LA ARQUITECTURA ---
+import com.enrique.tiago_app.core.ProtocolDirector
 import com.enrique.tiago_app.utils.AppConstants
-import com.enrique.tiago_app.protocol.RobotCapabilitiesData // ¡NUEVO! El modelo de datos
+import com.enrique.tiago_app.protocol.RobotCapabilitiesData
 
-// ¡NUEVO! Enum para las pantallas del menú lateral
+/**
+ * @enum AppScreen
+ * @brief Define el grafo de navegación interno una vez establecida la conexión con el robot.
+ */
 enum class AppScreen {
-    DASHBOARD,    // La pantalla en blanco por defecto
-    TELEOP,       // Tu joystick
-    CAMERA,        // La nueva pantalla de cámara
-    PLAY_MOTION,
-    INVESTIGACION,
-    ARTICULACIONES,
-    SENSORES
+    DASHBOARD,      // Vista resumen general y telemetría del Host PC
+    TELEOP,         // Control cinemático manual (Joystick cmd_vel)
+    CAMERA,         // Streaming de vídeo en tiempo real
+    PLAY_MOTION,    // Ejecución de rutinas de movimiento pregrabadas
+    INVESTIGACION,  // Analizador del grafo de ROS 2 (Topics, Services, Actions)
+    ARTICULACIONES, // Control de bajo nivel de los motores (Joints)
+    SENSORES        // Monitorización de datos sensoriales (Láser, Sonar, etc.)
 }
 
 /**
- * MainViewModel
- * El cerebro de navegación y conexión.
- * Sobrevive a los giros de pantalla y conecta la UI con el Director.
+ * @class MainViewModel
+ * @brief Cerebro global de la App. Sobrevive a rotaciones de pantalla y mantiene el estado general.
+ * @param director Inyección de dependencia del núcleo de comunicaciones.
  */
 class MainViewModel(
     private val director: ProtocolDirector
 ) : ViewModel() {
 
-    // ¡NUEVO! Guardamos la referencia a la tarea repetitiva
+    // ========================================================================
+    // 1. MOTOR ASÍNCRONO DE TELEMETRÍA (BACKGROUND POLLING)
+    // ========================================================================
+
+    /** @brief Referencia a la corrutina en segundo plano para poder cancelarla bajo demanda. */
     private var pollingJob: Job? = null
 
-    // ==========================================
-    // ¡NUEVO! SISTEMA DE ACTUALIZACIÓN CONTINUA (TICK-TOCK)
-    // ==========================================
+    /**
+     * @brief Inicia el bucle de peticiones de estado del sistema (Polling).
+     * @details Implementa una estrategia de Multiplexación en el tiempo para evitar
+     *          saturar el ancho de banda. Alterna entre pedir datos del robot y datos del PC
+     *          cada 2.5 segundos, resultando en una actualización global cada 5 segundos.
+     */
     private fun startPolling() {
-        // Si el bucle ya está funcionando, no hacemos nada
+        // Prevención de hilos duplicados: si ya está corriendo, abortamos la creación de uno nuevo.
         if (pollingJob?.isActive == true) return
 
         pollingJob = viewModelScope.launch {
-            // ¡NUEVO! Variable para alternar los mensajes y no pisarlos
-            var askForRobotData = true
+            var askForRobotData = true // Interruptor de estado
 
-            // Bucle infinito que durará hasta que alguien llame a stopPolling()
             while (isActive) {
-                // Solo pedimos si el semáforo está en verde (SESION_INICIADA)
+                // Solo emitimos peticiones si la sesión lógica de ROS 2 está autorizada
                 if (director.stateManager.globalState.value == AppConstants.GlobalState.SESION_INICIADA) {
 
                     if (askForRobotData) {
-                        // TURNO 1: Pedir estado del Robot (Batería, e-stop, etc)
+                        // Pedimos estado dinámico del hardware (Batería, E-Stop, etc.)
                         director.sendRequestRobotInfo()
                     } else {
-                        // TURNO 2: Pedir telemetría del PC (CPU, RAM, Temp)
-                        // IMPORTANTE: Pon aquí el nombre exacto de la función que tienes en tu ProtocolDirector
-                        // (Suele ser algo como sendRequestHostTelemetry() o fetchTelemetry())
+                        // Pedimos carga de procesamiento del PC anfitrión (CPU, RAM, Temp)
                         director.requestHostTelemetry()
                     }
 
-                    // Invertimos el interruptor para el siguiente ciclo
+                    // Invertimos la polaridad para el siguiente ciclo
                     askForRobotData = !askForRobotData
                 }
 
-                // Esperamos 2.5 segundos (la mitad de 5s).
-                // Cada dato se actualiza cada 5 segundos, pero las peticiones están separadas en el tiempo.
+                // Pausa asíncrona (no bloquea el hilo principal de UI)
                 delay(2500)
             }
         }
     }
 
+    /**
+     * @brief Detiene y destruye el hilo de telemetría de forma segura.
+     */
     private fun stopPolling() {
         pollingJob?.cancel()
         pollingJob = null
     }
 
-    // ==========================================
-    // 1. ESTADO DE LA INTERFAZ (Textos)
-    // ==========================================
+    // ========================================================================
+    // 2. ESTADO EXPUESTO A LA INTERFAZ GRÁFICA (UI State)
+    // ========================================================================
 
-    // Guardamos la IP con el valor por defecto de constants.py
+    /** @brief Dirección IP del servidor puente (WebSocket). */
     private val _ipAddress = MutableStateFlow(AppConstants.DEFAULT_SERVER_IP)
     val ipAddress: StateFlow<String> = _ipAddress.asStateFlow()
 
-    // Guardamos el Puerto
+    /** @brief Puerto de conexión TCP. */
     private val _port = MutableStateFlow(AppConstants.DEFAULT_SERVER_PORT.toString())
     val port: StateFlow<String> = _port.asStateFlow()
 
-    // ¡NUEVO! Guardamos la pantalla actual del menú lateral.
-    // Empezará en DASHBOARD (la pantalla en blanco que pediste).
+    /** @brief Pantalla actual renderizada en el contenedor principal de la UI. */
     private val _currentScreen = MutableStateFlow(AppScreen.DASHBOARD)
     val currentScreen: StateFlow<AppScreen> = _currentScreen.asStateFlow()
 
-    // ==========================================
-    // 2. EL PASILLO DEL ESTADO GLOBAL
-    // ==========================================
+    // ========================================================================
+    // 3. PASILLOS DIRECTOS DESDE EL DIRECTOR (Capa de Dominio -> UI)
+    // ========================================================================
 
-    // La UI observará esta variable para saber qué pantalla pintar.
+    /** @brief Máquina de estados global de la aplicación (IDLE, SESION_INICIADA, etc.). */
     val globalState: StateFlow<String> = director.stateManager.globalState
 
-    // ¡NUEVO! Observamos las alertas del sistema (Desconexiones de emergencia)
+    /** @brief Canal de interrupciones del sistema (Errores críticos o paradas de emergencia). */
     val systemAlert = director.stateManager.systemAlert
 
-    // ¡NUEVO! Pasillo directo hacia la radiografía del robot.
-    // Jetpack Compose leerá esto para pintar los menús o deshabilitar botones.
+    /** @brief Manifiesto estático de lo que el robot conectado puede y no puede hacer. */
     val robotCapabilities: StateFlow<RobotCapabilitiesData?> = director.robotCapabilities
 
-    // Añade esta línea para que el Dashboard pueda leer los sensores del PC
+    /** @brief Datos de rendimiento de la máquina que ejecuta el nodo ROS 2. */
     val hostTelemetry = director.hostTelemetry
 
+    // ========================================================================
+    // 4. INICIALIZACIÓN Y VIGILANCIA REACTIVA
+    // ========================================================================
+
     init {
-        // Vigilante del estado global
+        // Observador continuo de la máquina de estados global
         viewModelScope.launch {
             director.stateManager.globalState.collect { state ->
                 when (state) {
                     AppConstants.GlobalState.SESION_INICIADA,
                     AppConstants.GlobalState.ESPERANDO_RECIBIR_INFORMACION_UNICA -> {
-                        // Mientras estemos en una sesión activa o actualizando info,
-                        // nos aseguramos de que el motor de peticiones esté encendido.
+                        // Al estabilizar la conexión lógica, arrancamos los "latidos" de telemetría
                         startPolling()
                     }
                     AppConstants.GlobalState.IDLE,
                     AppConstants.GlobalState.CONEXION_BACKEND -> {
-                        // Si nos desconectamos, apagamos el motor y limpiamos la pantalla.
+                        // Al desconectar, apagamos motores asíncronos y borramos memoria
                         stopPolling()
                         director.clearRobotCapabilities()
 
-                        // ¡LA SOLUCIÓN MAESTRA!
-                        // Reseteamos el menú al salir del robot. Así, cuando volvamos a entrar,
-                        // nos recibirá el Dashboard limpio, sin interferir con las peticiones internas.
+                        // Reseteo de navegación: Fuerza a la app a volver a la vista inicial (Dashboard)
+                        // para la próxima vez que se inicie sesión.
                         _currentScreen.value = AppScreen.DASHBOARD
                     }
                     else -> {
-                        // En estados intermedios de conexión/desconexión, apagamos el polling por seguridad.
+                        // En estados transitorios (conectando...), detenemos peticiones por seguridad
                         stopPolling()
                     }
                 }
@@ -145,34 +162,42 @@ class MainViewModel(
         }
     }
 
+    /**
+     * @brief Limpia la alerta crítica actual en la pantalla para permitir continuar al usuario.
+     */
     fun clearAlert() {
         director.stateManager.clearSystemAlert()
     }
 
-    // ==========================================
-    // 3. EVENTOS DEL USUARIO (Teclear)
-    // ==========================================
+    // ========================================================================
+    // 5. EVENTOS DE INTERACCIÓN (Intentions)
+    // ========================================================================
 
+    /**
+     * @brief Actualiza la dirección IP del servidor WebSocket en el estado.
+     */
     fun onIpChange(newIp: String) {
         _ipAddress.value = newIp
     }
 
+    /**
+     * @brief Actualiza el puerto de red del servidor WebSocket en el estado.
+     */
     fun onPortChange(newPort: String) {
         _port.value = newPort
     }
 
-    // ¡NUEVO! Para cuando el usuario haga clic en una opción del menú de las 3 rayitas
+    /**
+     * @brief Cambia la vista interna renderizada en la pantalla principal.
+     * @param screen Destino dentro de AppScreen.
+     */
     fun navigateTo(screen: AppScreen) {
         _currentScreen.value = screen
     }
 
-    // ==========================================
-    // 4. ACCIONES DE LOS BOTONES
-    // ==========================================
-
     /**
-     * Llamado por el botón "Conectar" en la Pantalla 1 (LoginScreen).
-     * Abre el túnel físico WebSocket.
+     * @brief Inicia el handshake de bajo nivel con el servidor.
+     * @details Establece el socket TCP hacia el puente Python-ROS2.
      */
     fun connectToWebSocket() {
         val portInt = _port.value.toIntOrNull() ?: AppConstants.DEFAULT_SERVER_PORT
@@ -180,9 +205,9 @@ class MainViewModel(
     }
 
     /**
-     * ¡NUEVO! Llamado por el botón "Desconectar Robot" en la Pantalla 3 (ControlScreen).
-     * Cierra la sesión lógica y devuelve a la app a la Pantalla 2.
-     * (Manda COMMAND_REQ(disconnect)).
+     * @brief Inicia el cierre limpio de la sesión.
+     * @details Solicita al backend destruir la instancia del robot antes de cortar el socket,
+     *          liberando correctamente la memoria en el servidor.
      */
     fun disconnectFromRobot() {
         director.sendDisconnectFromRobot()

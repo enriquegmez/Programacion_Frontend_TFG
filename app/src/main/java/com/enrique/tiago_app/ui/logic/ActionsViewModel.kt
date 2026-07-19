@@ -1,4 +1,14 @@
-package com.enrique.tiago_app.ui.logic // Ajusta a tu paquete
+/**
+ * @file ActionsViewModel.kt
+ * @brief ViewModel dedicado a la gestión de animaciones pregrabadas (PlayMotion).
+ * @details Actúa como intermediario (Brain) entre la interfaz gráfica y el Director.
+ *          Aplica el patrón de Flujo Unidireccional de Datos (UDF), garantizando que la UI
+ *          solo observe estados inmutables y dispare eventos que el ViewModel procesa.
+ * @author Enrique Gómez
+ * @date 2026
+ */
+
+package com.enrique.tiago_app.ui.logic
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -8,56 +18,63 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 // Importamos el Director y los Modelos
-import com.enrique.tiago_app.logic.ProtocolDirector
-import com.enrique.tiago_app.utils.AppConstants
+import com.enrique.tiago_app.core.ProtocolDirector
 import com.enrique.tiago_app.protocol.ActionFeedbackPayload
 
 /**
- * PlayMotionViewModel
- * El cerebro exclusivo de la pantalla de Movimientos Predefinidos.
- * Gestiona la selección de acciones, el progreso y las paradas de emergencia.
+ * @class PlayMotionViewModel
+ * @brief Gestiona la selección, ejecución y monitorización de las acciones de movimiento.
+ * @param director Inyección de dependencia del núcleo de comunicaciones.
  */
 class PlayMotionViewModel(
     private val director: ProtocolDirector
 ) : ViewModel() {
 
-    // ==========================================
-    // 1. PASILLOS DIRECTOS DESDE EL DIRECTOR
-    // ==========================================
+    // ========================================================================
+    // 1. PASILLOS DIRECTOS DESDE EL DIRECTOR (Capa de Dominio -> UI)
+    // ========================================================================
 
-    // Observamos la lista de acciones disponibles que nos mande el servidor
+    /**
+     * @brief Lista reactiva con los nombres de las rutinas de movimiento disponibles.
+     * @details Se mapea directamente desde el Director para no duplicar estados en memoria.
+     */
     val availableActions: StateFlow<List<String>> = director.availableActions
 
-    // Observamos el estado del movimiento (IDLE, ESPERANDO_EJECUTAR_ACCION, ESPERANDO_DETENER_ACCION)
+    /**
+     * @brief Estado actual de la máquina de estados de movimiento.
+     * @details Refleja transiciones críticas como IDLE, ESPERANDO_EJECUTAR_ACCION o ESPERANDO_DETENER_ACCION.
+     */
     val movementState: StateFlow<String> = director.stateManager.movementState
 
 
-    // ==========================================
-    // 2. ESTADO INTERNO DE ESTA PANTALLA
-    // ==========================================
+    // ========================================================================
+    // 2. ESTADO INTERNO DE ESTA PANTALLA (Capa de Presentación)
+    // ========================================================================
 
-    // Guardamos qué movimiento ha tocado el usuario en la lista antes de darle a "Ejecutar"
+    /** @brief Estado mutable interno para la acción seleccionada por el usuario en la lista. */
     private val _selectedAction = MutableStateFlow<String?>(null)
+    /** @brief Estado inmutable expuesto a Jetpack Compose. */
     val selectedAction: StateFlow<String?> = _selectedAction.asStateFlow()
 
-    // Guardamos el último feedback recibido (Progreso, estado de completado, errores...)
+    /** @brief Estado mutable interno con los datos de telemetría de la acción en curso. */
     private val _currentFeedback = MutableStateFlow<ActionFeedbackPayload?>(null)
+    /** @brief Expone a la UI el progreso (%), estado ("running", "succeeded") y errores de la acción. */
     val currentFeedback: StateFlow<ActionFeedbackPayload?> = _currentFeedback.asStateFlow()
 
-
     init {
-        // Recolectamos en tiempo real los feedbacks que emite el Director
+        // --- 1. RECOLECCIÓN DE FEEDBACK EN TIEMPO REAL ---
+        // Abrimos una corrutina atada al ciclo de vida del ViewModel para interceptar
+        // las respuestas tipo ACTION_FEEDBACK enviadas por el servidor de ROS 2.
         viewModelScope.launch {
             director.actionFeedback.collect { feedback ->
                 _currentFeedback.value = feedback
             }
         }
 
-        // ==========================================
-        // ¡NUEVO! EL LIMPIAPARABRISAS
-        // Si el Director vacía la lista (por una desconexión),
-        // nosotros soltamos la acción seleccionada y borramos la barra de carga.
-        // ==========================================
+        // --- 2. SISTEMA DE AUTOLIMPIEZA ---
+        // Si el Director informa de que la lista de acciones se ha vaciado (típicamente
+        // debido a una desconexión abrupta o pérdida de conexión física con el robot),
+        // reseteamos inmediatamente la UI para no mostrar un "fantasma" de una acción anterior.
         viewModelScope.launch {
             availableActions.collect { actions ->
                 if (actions.isEmpty()) {
@@ -67,31 +84,33 @@ class PlayMotionViewModel(
         }
     }
 
-
-    // ==========================================
-    // 3. EVENTOS DEL USUARIO (Botones de la UI)
-    // ==========================================
+    // ========================================================================
+    // 3. EVENTOS DEL USUARIO
+    // ========================================================================
 
     /**
-     * Llamado por el botón "Obtener Movimientos" en la parte superior de la pantalla.
-     * Pide al servidor la lista actualizada de animaciones (QueryReq -> ACTIONS).
+     * @brief Solicita al servidor el inventario actualizado de rutinas.
+     * @details Desencadena un mensaje JSON tipo QUERY_REQ con resource="ACTIONS".
      */
     fun fetchAvailableActions() {
         director.sendQueryActionsReq()
     }
 
     /**
-     * Llamado cuando el usuario hace clic en una fila de la lista de movimientos.
+     * @brief Selecciona una acción de la lista para su futura ejecución.
+     * @param actionName Nombre exacto de la rutina (ej. "wave", "nod").
      */
     fun selectAction(actionName: String) {
         _selectedAction.value = actionName
-        // Limpiamos cualquier feedback anterior de otro movimiento
+
+        // Al elegir un movimiento nuevo, eliminamos el feedback (barra de carga) del anterior
         _currentFeedback.value = null
     }
 
     /**
-     * Llamado por el botón "Ejecutar Movimiento".
-     * Manda la orden al robot y limpia el progreso.
+     * @brief Dispara la ejecución de la rutina pregrabada.
+     * @details Desencadena un ACTION_REQ si hay una rutina seleccionada. Si no la hay,
+     *          invoca al gestor de estados para levantar una alerta gráfica de aviso.
      */
     fun executeSelectedAction() {
         val target = _selectedAction.value
@@ -99,13 +118,14 @@ class PlayMotionViewModel(
             _currentFeedback.value = null // Reseteamos la barra de progreso a 0
             director.sendActionReq(target)
         } else {
-            // Si por algún motivo se pulsa sin haber seleccionado, avisamos
+            // Protección contra clics en falso
             director.stateManager.showSystemAlert("Por favor, selecciona un movimiento de la lista primero.")
         }
     }
 
     /**
-     * Llamado por el botón rojo de "Detener Acción" mientras el robot se mueve.
+     * @brief Botón de emergencia para abortar de inmediato la ejecución motriz.
+     * @details Desencadena un STOP_ACTION_REQ que el servidor inyecta directo al action server de ROS 2.
      */
     fun stopCurrentAction() {
         val target = _selectedAction.value
@@ -115,8 +135,8 @@ class PlayMotionViewModel(
     }
 
     /**
-     * Llamado si queremos limpiar manualmente la selección y los mensajes
-     * (Por ejemplo, al pulsar un botón de "Volver" o "Cancelar").
+     * @brief Restaura la pantalla a su estado inicial.
+     * @details Se utiliza al cambiar de pestaña en la navegación o al cancelar una operación.
      */
     fun clearSelection() {
         _selectedAction.value = null
