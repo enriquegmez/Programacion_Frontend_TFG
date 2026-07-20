@@ -145,7 +145,7 @@ class JointControlViewModel(
         if (isViolation) {
             lockedJoints.add(jointName)
             director.stateManager.showSystemAlert(
-                "⚠ Movimiento bloqueado.\n\nHas movido la barra demasiado rápido. Levanta el dedo para continuar.",
+                "Movimiento bloqueado.\n\nHas movido la barra demasiado rápido. Levanta el dedo para continuar.",
                 title="Aviso de parada"
             )
 
