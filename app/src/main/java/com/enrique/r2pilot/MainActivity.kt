@@ -42,7 +42,7 @@ import com.enrique.r2pilot.utils.AppConstants
 // --- IMPORTS DE VIEWMODELS ---
 import com.enrique.r2pilot.ui.logic.MainViewModel
 import com.enrique.r2pilot.ui.logic.LobbyViewModel
-import com.enrique.r2pilot.ui.logic.ControlViewModel
+import com.enrique.r2pilot.ui.logic.JoystickViewModel
 import com.enrique.r2pilot.ui.logic.StreamViewModel
 import com.enrique.r2pilot.ui.logic.PlayMotionViewModel
 import com.enrique.r2pilot.ui.logic.InvestigationViewModel
@@ -134,7 +134,7 @@ fun AppNavigation() {
     // Todos los ViewModels reciben exactamente la misma instancia del ProtocolDirector
     val mainViewModel: MainViewModel = viewModel { MainViewModel(AppDependencies.director) }
     val lobbyViewModel: LobbyViewModel = viewModel { LobbyViewModel(AppDependencies.director) }
-    val controlViewModel: ControlViewModel = viewModel { ControlViewModel(AppDependencies.director) }
+    val joystickViewModel: JoystickViewModel = viewModel { JoystickViewModel(AppDependencies.director) }
     val streamViewModel: StreamViewModel = viewModel { StreamViewModel(AppDependencies.director) }
     val playMotionViewModel: PlayMotionViewModel = viewModel { PlayMotionViewModel(AppDependencies.director) }
     val investigationViewModel: InvestigationViewModel = viewModel { InvestigationViewModel(AppDependencies.director) }
@@ -210,7 +210,7 @@ fun AppNavigation() {
 
         composable("menu principal") {
             MainScreen(
-                controlViewModel = controlViewModel,
+                joystickViewModel = joystickViewModel,
                 mainViewModel = mainViewModel,
                 streamViewModel = streamViewModel,
                 playMotionViewModel = playMotionViewModel,

@@ -1,5 +1,5 @@
 /**
- * @file ControlViewModel.kt
+ * @file JoystickViewModel.kt
  * @brief ViewModel encargado de la teleoperación manual (Joystick) del robot.
  * @details Gestiona el ciclo de vida de los permisos motrices y ejecuta un bucle
  *          de publicación constante (10 Hz) para inyectar velocidades cinemáticas
@@ -24,11 +24,11 @@ import com.enrique.r2pilot.core.ProtocolDirector
 import com.enrique.r2pilot.utils.AppConstants
 
 /**
- * @class ControlViewModel
+ * @class JoystickViewModel
  * @brief Cerebro de la pantalla de Control Manual (Teleoperación).
  * @param director Inyección del núcleo de comunicaciones.
  */
-class ControlViewModel(
+class JoystickViewModel(
     private val director: ProtocolDirector
 ) : ViewModel() {
 

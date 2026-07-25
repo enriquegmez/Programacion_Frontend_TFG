@@ -23,7 +23,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
 // --- IMPORTS DE LA LÓGICA DE NEGOCIO ---
-import com.enrique.r2pilot.ui.logic.ControlViewModel
+import com.enrique.r2pilot.ui.logic.JoystickViewModel
 import com.enrique.r2pilot.ui.logic.MainViewModel
 import com.enrique.r2pilot.ui.logic.StreamViewModel
 import com.enrique.r2pilot.ui.logic.AppScreen
@@ -46,7 +46,7 @@ import com.enrique.r2pilot.ui.components.SplitSourcePicker
  *          y la distribución de capas (Z-Index) para menús flotantes.
  *
  * @param mainViewModel Gestión global de la app, estado de red y capacidades de hardware del robot.
- * @param controlViewModel Lógica de teleoperación (joystick y envío de comandos de velocidad).
+ * @param joystickViewModel Lógica de teleoperación (joystick y envío de comandos de velocidad).
  * @param streamViewModel Gestión de la recepción, decodificación y renderizado de vídeo ROS 2.
  * @param playMotionViewModel Lógica para la ejecución de macros y movimientos pregrabados.
  * @param investigationViewModel Herramientas de análisis de datos y telemetría avanzada.
@@ -57,7 +57,7 @@ import com.enrique.r2pilot.ui.components.SplitSourcePicker
 @Composable
 fun MainScreen(
     mainViewModel: MainViewModel,
-    controlViewModel: ControlViewModel,
+    joystickViewModel: JoystickViewModel,
     streamViewModel: StreamViewModel,
     playMotionViewModel: PlayMotionViewModel,
     investigationViewModel: InvestigationViewModel,
@@ -78,7 +78,7 @@ fun MainScreen(
     var showSourcePicker by remember { mutableStateOf(false) }
 
     // Estado del hardware para adaptar la UI
-    val movState by controlViewModel.movementState.collectAsState()
+    val movState by joystickViewModel.movementState.collectAsState()
     val isTeleopActive = (movState == AppConstants.MovementState.ENVIANDO_INFO)
     val robotData by mainViewModel.robotCapabilities.collectAsState()
 
@@ -116,7 +116,7 @@ fun MainScreen(
         topScreenSelection = AppScreen.CAMERA
 
         if (currentScreen != AppScreen.TELEOP && isTeleopActive) {
-            controlViewModel.toggleTeleop(false)
+            joystickViewModel.toggleTeleop(false)
         }
     }
 
@@ -126,7 +126,7 @@ fun MainScreen(
         AppScreen.TELEOP -> "Control" to "Teleoperación"
         AppScreen.CAMERA -> "Datos" to "Cámara"
         AppScreen.PLAY_MOTION -> "Control" to "Acciones"
-        AppScreen.INVESTIGACION -> "Datos" to "Investigación"
+        AppScreen.INVESTIGACION -> "Datos" to "Análisis"
         AppScreen.ARTICULACIONES -> "Control" to "Articulaciones"
         AppScreen.SENSORES -> "Datos" to "Sensores"
     }
@@ -251,7 +251,7 @@ fun MainScreen(
                         // --- MITAD INFERIOR: Capa de Actuación ---
                         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                             when (currentScreen) {
-                                AppScreen.TELEOP -> JoystickView(controlViewModel = controlViewModel, teleopTopics = robotData?.capabilities?.teleopTopics ?: emptyList(), isCompact = true)
+                                AppScreen.TELEOP -> JoystickView(joystickViewModel = joystickViewModel, teleopTopics = robotData?.capabilities?.teleopTopics ?: emptyList(), isCompact = true)
                                 AppScreen.PLAY_MOTION -> PlayMotionScreen(viewModel = playMotionViewModel, isCompact = true)
                                 AppScreen.ARTICULACIONES -> JointControlScreen(viewModel = jointControlViewModel, isCompact = true)
                                 else -> {}
@@ -262,7 +262,7 @@ fun MainScreen(
                     // --- MODO PANTALLA COMPLETA ---
                     when (currentScreen) {
                         AppScreen.DASHBOARD -> DashboardScreen(mainViewModel)
-                        AppScreen.TELEOP -> JoystickView(controlViewModel = controlViewModel, teleopTopics = robotData?.capabilities?.teleopTopics ?: emptyList())
+                        AppScreen.TELEOP -> JoystickView(joystickViewModel = joystickViewModel, teleopTopics = robotData?.capabilities?.teleopTopics ?: emptyList())
                         AppScreen.CAMERA -> StreamView(streamViewModel = streamViewModel, cameraTopics = robotData?.capabilities?.cameraTopics ?: emptyList())
                         AppScreen.PLAY_MOTION -> PlayMotionScreen(viewModel = playMotionViewModel)
                         AppScreen.INVESTIGACION -> InvestigationScreen(viewModel = investigationViewModel)

@@ -21,31 +21,31 @@ import androidx.compose.ui.graphics.Color
 // --- IMPORTS DE COMPONENTES Y LÓGICA ---
 import com.enrique.r2pilot.ui.components.JoystickComponent
 import com.enrique.r2pilot.ui.components.MonoValue
-import com.enrique.r2pilot.ui.logic.ControlViewModel
+import com.enrique.r2pilot.ui.logic.JoystickViewModel
 import com.enrique.r2pilot.utils.AppConstants
 
 /**
  * @brief Interfaz de control de movimiento base bidimensional.
  * @details Coordina la selección del tópico de destino (`geometry_msgs/Twist`), el estado de
  *          armado de los motores y la inyección de comandos espaciales generados por el joystick.
- * @param controlViewModel Instancia de [ControlViewModel] que gestiona la comunicación y estados de teleoperación.
+ * @param joystickViewModel Instancia de [JoystickViewModel] que gestiona la comunicación y estados de teleoperación.
  * @param teleopTopics Lista de tópicos disponibles en la red ROS 2 que aceptan comandos de velocidad.
  * @param isCompact Modo de renderizado. Si es true, oculta la cabecera y telemetría para maximizar el joystick.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun JoystickView(
-    controlViewModel: ControlViewModel,
+    joystickViewModel: JoystickViewModel,
     teleopTopics: List<String>,
     isCompact: Boolean = false
 ) {
     // ========================================================================
     // 1. OBSERVADORES DE ESTADO
     // ========================================================================
-    val movState by controlViewModel.movementState.collectAsState()
-    val topicText by controlViewModel.targetTopic.collectAsState()
-    val liveV by controlViewModel.liveV.collectAsState()
-    val liveW by controlViewModel.liveW.collectAsState()
+    val movState by joystickViewModel.movementState.collectAsState()
+    val topicText by joystickViewModel.targetTopic.collectAsState()
+    val liveV by joystickViewModel.liveV.collectAsState()
+    val liveW by joystickViewModel.liveW.collectAsState()
 
     // Banderas derivadas del estado de la red
     val isTeleopActive = movState == AppConstants.MovementState.ENVIANDO_INFO
@@ -62,7 +62,7 @@ fun JoystickView(
     // se auto-asigna el primero por comodidad operativa.
     LaunchedEffect(teleopTopics) {
         if (topicText.isBlank() && teleopTopics.isNotEmpty()) {
-            controlViewModel.onTopicChange(teleopTopics.first())
+            joystickViewModel.onTopicChange(teleopTopics.first())
         }
     }
 
@@ -103,7 +103,7 @@ fun JoystickView(
                             DropdownMenuItem(
                                 text = { Text(topic) },
                                 onClick = {
-                                    controlViewModel.onTopicChange(topic)
+                                    joystickViewModel.onTopicChange(topic)
                                     expanded = false
                                 }
                             )
@@ -129,7 +129,7 @@ fun JoystickView(
                 } else {
                     Switch(
                         checked = isTeleopActive,
-                        onCheckedChange = { controlViewModel.toggleTeleop(it) },
+                        onCheckedChange = { joystickViewModel.toggleTeleop(it) },
                         // Solo permite armar si hay una ruta válida seleccionada
                         enabled = topicText.isNotBlank(),
                         colors = SwitchDefaults.colors(
@@ -154,7 +154,7 @@ fun JoystickView(
             // El joystick es ignorable físicamente si no está armado
             isEnabled = isTeleopActive,
             // Callback de inyección cinemática (Velocidad lineal 'v' y angular 'w')
-            onVelocityChanged = { v, w -> controlViewModel.updateJoystick(v, w) }
+            onVelocityChanged = { v, w -> joystickViewModel.updateJoystick(v, w) }
         )
 
         // ========================================================================

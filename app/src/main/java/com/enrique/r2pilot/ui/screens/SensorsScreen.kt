@@ -463,7 +463,17 @@ fun LaserScanView(scan: LaserScanData, isCompact: Boolean = false) {
     val nearColor = Color(0xFFFF5468)
     val midColor = cs.primary
     val farColor = cs.tertiary
-    val orientationOffset = (Math.PI / 4).toFloat()
+    // =========================================================================
+    // CONFIGURACIÓN DE DESFASE DEL SENSOR (URDF Frame offset)
+    // =========================================================================
+
+    // -> DESCOMENTAR PARA SIMULADOR GAZEBO (Si los sensores están montados en diagonal a 45°)
+    // val orientationOffset = (Math.PI / 4).toFloat()
+
+    // -> DESCOMENTAR PARA ROBOT REAL (LiDAR 360° central alineado a 0°)
+    val orientationOffset = 0f
+
+    // =========================================================================
 
     Canvas(modifier = Modifier.fillMaxWidth().height(if (isCompact) 118.dp else 240.dp)) {
         val centerX = size.width / 2f
@@ -474,7 +484,8 @@ fun LaserScanView(scan: LaserScanData, isCompact: Boolean = false) {
 
         fun project(theta: Float, range: Float): Offset {
             val a = theta + orientationOffset
-            val sx = centerX + (range * sin(a) * scale)
+            //val sx = centerX + (range * sin(a) * scale)
+            val sx = centerX - (range * sin(a) * scale)
             val sy = centerY - (range * cos(a) * scale)
             return Offset(sx, sy)
         }
