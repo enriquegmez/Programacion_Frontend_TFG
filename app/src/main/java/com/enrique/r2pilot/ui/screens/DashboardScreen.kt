@@ -154,7 +154,7 @@ fun DashboardScreen(mainViewModel: MainViewModel) {
             "Brazo" to caps.hasManipulator,
             "Cabeza" to caps.hasHead,
             "Torso" to caps.hasTorso,
-            "Gripper" to caps.hasGripper,
+            "Mano" to caps.hasGripper,
             "LiDAR" to caps.hasLidar,
             "IMU" to caps.hasImu,
             "Odometría" to caps.hasOdom,

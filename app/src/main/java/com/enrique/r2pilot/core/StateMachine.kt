@@ -405,7 +405,7 @@ class ProtocolStateManager {
                     if (!isCorrectPayload) "Respuesta del servidor con formato incorrecto."
                     else (respMsg.payload as? QueryRespPayload)?.details
                         ?: "Error desconocido al obtener información."
-                showSystemAlert("Aviso de escaneo: $errorReason")
+                showSystemAlert("Aviso de escaneo: $errorReason", "Aviso de escaneo")
             }
             return true
         }
