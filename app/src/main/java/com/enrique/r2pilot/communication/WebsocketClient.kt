@@ -41,11 +41,11 @@ class WebSocketClient {
     /*
      * Se utiliza el motor CIO (Coroutine-based I/O) por su alto rendimiento
      * en aplicaciones asíncronas de Android, configurando un Ping
-     * automático cada 20 segundos para mantener el túnel vivo (Keep-Alive).
+     * automático cada 5 segundos para mantener el túnel vivo (Keep-Alive).
      */
     private val client = HttpClient(CIO) {
         install(WebSockets) {
-            pingInterval = 20.seconds
+            pingInterval = 5.seconds
         }
     }
 
