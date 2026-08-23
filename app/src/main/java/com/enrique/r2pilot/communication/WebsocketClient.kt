@@ -109,7 +109,7 @@ class WebSocketClient {
         } catch (e: Exception) {
             Log.e(TAG, "La conexión Ktor falló (Host inaccesible o rechazado): ${e.message}")
         } finally {
-            // Cierre seguro garantizado (Graceful degradation)
+            // Cierre seguro garantizado
             Log.d(TAG, "Limpiando sesión Ktor y notificando desconexión a la UI...")
             session = null
             _isConnected.value = false

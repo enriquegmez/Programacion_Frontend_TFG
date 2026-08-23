@@ -14,7 +14,7 @@ package com.enrique.r2pilot.utils
 object AppConstants {
 
     /** @brief Dirección IP asignada por defecto a la interfaz de red del robot o servidor. */
-    const val DEFAULT_SERVER_IP = "192.168.68.83"
+    const val DEFAULT_SERVER_IP = "192.168.68.87"
 
     /** @brief Puerto de red estándar donde escucha el servidor WebSocket de Ktor/Python. */
     const val DEFAULT_SERVER_PORT = 8765

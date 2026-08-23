@@ -86,7 +86,7 @@ class JoystickViewModel(
     /**
      * @brief Hilo asíncrono que escupe paquetes de velocidad hacia el servidor.
      * @details Implementa un reloj a 10 Hz (100ms de delay). En robótica, los mandos (cmd_vel)
-     *          deben enviarse continuamente para que el Watchdog del robot (sistema de hombre muerto)
+     *          deben enviarse continuamente para que el Watchdog del robot
      *          no frene por seguridad al creer que se ha perdido la conexión.
      */
     private fun startTeleopLoop() {

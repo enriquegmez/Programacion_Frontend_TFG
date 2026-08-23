@@ -468,10 +468,10 @@ fun LaserScanView(scan: LaserScanData, isCompact: Boolean = false) {
     // =========================================================================
 
     // -> DESCOMENTAR PARA SIMULADOR GAZEBO (Si los sensores están montados en diagonal a 45°)
-     val orientationOffset = (Math.PI / 4).toFloat()
+     //val orientationOffset = (Math.PI / 4).toFloat()
 
     // -> DESCOMENTAR PARA ROBOT REAL (LiDAR 360° central alineado a 0°)
-    //val orientationOffset = 0f
+    val orientationOffset = 0f
 
     // =========================================================================
 
@@ -485,9 +485,9 @@ fun LaserScanView(scan: LaserScanData, isCompact: Boolean = false) {
         fun project(theta: Float, range: Float): Offset {
             val a = theta + orientationOffset
             //orientación robot simulado
-            val sx = centerX + (range * sin(a) * scale)
+            //val sx = centerX + (range * sin(a) * scale)
             //orientación robot real
-            //val sx = centerX - (range * sin(a) * scale)
+            val sx = centerX - (range * sin(a) * scale)
             val sy = centerY - (range * cos(a) * scale)
             return Offset(sx, sy)
         }
@@ -1048,7 +1048,7 @@ fun ZeroCenteredBar(label: String, value: Number, maxValue: Float, isCompact: Bo
 
 /**
  * @brief Componente descriptivo para datos espaciales crudos (Nubes de puntos).
- * @details Este tipo de sensores devuelven matrices tridimensionales (Tensors) masivas que,
+ * @details Este tipo de sensores devuelven matrices  tridimensionales (Tensors) masivas que,
  *          por limitaciones gráficas en Android, no se renderizan, por lo que este nodo
  *          actúa como mero informador de que el sensor está activo y retransmitiendo.
  * @param pc Parámetros y metadatos de la nube.

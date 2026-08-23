@@ -56,6 +56,16 @@ fun WebsocketScreen(viewModel: MainViewModel) {
     // Determina si hay un proceso de handshaking en curso.
     val isConnecting = (globalState == AppConstants.GlobalState.ESPERANDO_CONEXION_BACKEND)
 
+    // Validamos la IP (permitimos ipv4, ipv6 y dominios
+    val isIpValid = ip.isNotBlank() && !ip.contains(" ")
+
+    // Validamos el puerto (debe ser un número entre 1 y 65535)
+    val portInt = port.toIntOrNull()
+    val isPortValid = portInt != null && portInt in 1..65535
+
+    // El botón solo se activará si no está cargando Y los formatos son correctos
+    val canConnect = !isConnecting && isIpValid && isPortValid
+
     // ========================================================================
     // 3. ESTRUCTURA DE LA INTERFAZ
     // ========================================================================
@@ -78,13 +88,19 @@ fun WebsocketScreen(viewModel: MainViewModel) {
         // --- FORMULARIO DE ENRUTAMIENTO: Dirección IP ---
         OutlinedTextField(
             value = ip,
-            // Mutación del estado mediante UDF: la vista no cambia el valor, le pide al VM que lo haga.
             onValueChange = { newValue -> viewModel.onIpChange(newValue) },
-            label = { Text("Dirección IP del Robot") },
+            label = { Text("Dirección IP") },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(0.8f),
-            // Bloqueo defensivo: Evita mutaciones mientras se resuelve la promesa de red
-            enabled = !isConnecting
+            enabled = !isConnecting,
+
+            // Lógica visual de error
+            isError = !isIpValid && ip.isNotEmpty(), // Se pone rojo si es inválido (y no está vacío)
+            supportingText = {
+                if (!isIpValid && ip.isNotEmpty()) {
+                    Text("Formato de IP incorrecto (Ej: 192.168.1.10)")
+                }
+            }
         )
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -94,22 +110,30 @@ fun WebsocketScreen(viewModel: MainViewModel) {
             value = port,
             onValueChange = { newValue -> viewModel.onPortChange(newValue) },
             label = { Text("Puerto") },
-            // Optimización UX: Despliega directamente el teclado numérico en el SO
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             singleLine = true,
             modifier = Modifier.fillMaxWidth(0.8f),
-            enabled = !isConnecting
+            enabled = !isConnecting,
+
+            // Lógica visual de error
+            isError = !isPortValid && port.isNotEmpty(),
+            supportingText = {
+                if (!isPortValid && port.isNotEmpty()) {
+                    Text("Debe ser un número entre 1 y 65535")
+                }
+            }
         )
 
         Spacer(modifier = Modifier.height(32.dp))
 
-        // --- DESPACHO DE ACCIÓN (Action Dispatcher) ---
+        // --- DESPACHO DE ACCIÓN ---
         PrimaryActionButton(
             text = "Abrir WebSocket",
             onClick = { viewModel.connectToWebSocket() },
             modifier = Modifier.fillMaxWidth(0.8f),
-            // Prevención de Condiciones de Carrera (Doble Click) que saturan el servidor
-            enabled = !isConnecting,
+
+            // Usamos nuestra variable combinada
+            enabled = canConnect,
             loading = isConnecting,
             onContainer = Color.White
         )
