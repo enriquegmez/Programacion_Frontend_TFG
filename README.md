@@ -14,8 +14,8 @@ Este repositorio contiene el código del cliente móvil (Frontend) correspondien
 * **Universidad:** Universidad de Granada (UGR) - ETSIIT / TSTC (2026)
 
 📄 **[Consultar Memoria del TFG (PDF)](docs/Memoria_TFG_R2Pilot_Enrique_Gomez.pdf)**
-🔗 **[Ver Repositorio del Backend (Servidor ROS 2)](https://github.com/enriquegmez/Programacion_Backend_TFG.git)**
-📚 **[Ver Documentación de Código (Doxygen)](https://enriquegmez.github.io/Programacion_Frontend_TFG/doxygen/html/index.html)**
+🔗 **[Ver Repositorio del Backend (Servidor)](https://github.com/enriquegmez/TFG_R2Pilot-Backend.git)**
+📚 **[Ver Documentación de Código (Doxygen)](https://enriquegmez.github.io/TFG_R2Pilot-Frontend/doxygen/html/index.html)**
 
 ---
 
@@ -40,7 +40,8 @@ Se conecta con el robot mediante una arquitectura cliente-servidor basada en **W
 **1. Clonar el repositorio:**
 
 ```bash
-git clone https://github.com/enriquegmez/Programacion_Frontend_TFG.git
+git clone https://github.com/enriquegmez/TFG_R2Pilot-Frontend.git
+
 ```
 
 **2. Abrir en Android Studio:**
