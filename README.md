@@ -4,7 +4,7 @@
   <p><strong>Aplicación nativa de Android para el control y monitorización de robots basados en ROS 2.</strong></p>
 </div>
 
-## 🎓 Contexto Académico
+## 🎓 Contexto
 
 Este repositorio contiene el código del cliente móvil (Frontend) correspondiente al **Trabajo Fin de Grado (TFG)**:
 
