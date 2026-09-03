@@ -13,7 +13,7 @@ Este repositorio contiene el código del cliente móvil (Frontend) correspondien
 * **Tutor:** Juan José Ramos Muñoz
 * **Universidad:** Universidad de Granada (UGR) - ETSIIT / TSTC (2026)
 
-📄 **[Consultar Memoria del TFG (PDF)](docs/Memoria_TFG_R2Pilot_Enrique_Gomez.pdf)**<br>
+📄 **[Consultar Memoria del TFG (PDF)](docs/TFG_Enrique_Gómez.pdf)**<br>
 🔗 **[Ver Repositorio del Backend (Servidor)](https://github.com/enriquegmez/TFG_R2Pilot-Backend.git)**<br>
 📚 **[Ver Documentación de Código (Doxygen)](https://enriquegmez.github.io/TFG_R2Pilot-Frontend/doxygen/html/index.html)**
 
